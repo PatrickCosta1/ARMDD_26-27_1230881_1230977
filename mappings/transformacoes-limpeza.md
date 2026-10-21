@@ -1,51 +1,107 @@
+
 # Regras de Transformação e Limpeza de Dados
 
-## 1. Objetivo
+## 1. Objetivo e princípios
 
-Este documento define as regras propostas para tratar os problemas de qualidade identificados na base de dados operacional MoreRhythm. As regras destinam-se a orientar a preparação dos dados na Staging Area e o seu posterior carregamento para o Data Mart.
+Este documento define as regras propostas para tratar os problemas de qualidade identificados na base de dados operacional `MoreRhythm`, no âmbito da preparação dos dados para o Data Mart.
 
-As transformações devem preservar a rastreabilidade dos dados de origem. Os registos que não possam ser corrigidos de forma fiável devem ser identificados e encaminhados para análise, em vez de serem eliminados automaticamente.
+As regras devem cumprir os seguintes princípios:
+
+- **Preservação da origem:** não alterar os dados da base operacional e preservar na Staging Area os valores extraídos necessários à auditoria.
+- **Rastreabilidade:** identificar o registo de origem, a execução de carregamento, a regra aplicada e o motivo de qualquer sinalização ou rejeição.
+- **Correção determinística:** corrigir automaticamente apenas situações para as quais exista uma regra inequívoca e fundamentada.
+- **Rejeição controlada:** os registos com problemas de qualidade que não possam ser corrigidos automaticamente devem permanecer armazenados em estruturas próprias da Staging Area e ser excluídos do carregamento para o Data Mart.
+- **Não inferência:** não inventar identificadores, classificações, valores financeiros ou relações que não sejam suportados pelos dados ou por uma regra de negócio validada.
+
+A identificação de uma anomalia não prova, por si só, que exista um erro de negócio. Em particular, os sinais das quantidades e dos preços e as diferenças entre cabeçalhos e linhas de fatura necessitam de confirmação.
 
 ## 2. Regras de tratamento
 
-| ID | Problema | Regra proposta | Tratamento |
+| ID | Problema observado | Regra proposta | Tratamento previsto |
 |---|---|---|---|
-| R01 | Clientes potencialmente duplicados | Comparar o número de contribuinte normalizado e os atributos de identificação. | Identificar os clientes 10 e 18 como candidatos a consolidação. A decisão final deve ser validada antes de consolidar as referências. |
-| R02 | Campos de contacto em falta | Identificar os campos nulos ou vazios, preservando o valor original. | Manter os campos opcionais sem valor e sinalizar os casos em que o atributo seja necessário para uma análise. |
-| R03 | Zona do cliente em falta | Verificar se existe uma zona válida na origem. | Não atribuir uma zona por inferência. Manter o valor original e utilizar um membro desconhecido no Data Mart, se necessário. |
-| R04 | Atributos de produto em falta | Validar designação, família, categoria, fornecedor, stock e preço de venda. | Preservar os dados originais e sinalizar os atributos em falta. Não inventar classificações ou valores comerciais. |
-| R05 | Linhas de compra sem produto | Identificar as linhas em que a referência do produto é nula ou vazia. | Preservar as 12 linhas na Staging Area e encaminhá-las para investigação. Não associar um produto arbitrário. |
-| R06 | Quantidade ou preço unitário negativo em linhas de fatura | Identificar os registos e analisar o documento associado antes de determinar o significado dos sinais. | Preservar os valores originais e sinalizar os casos para investigação. Não aplicar valores absolutos automaticamente. |
-| R07 | Diferença entre total do cabeçalho e soma das linhas | Comparar o total de produtos da fatura com a soma dos totais das linhas. | Registar a diferença e sinalizar os documentos com discrepâncias superiores a 0,01, sem substituir automaticamente os valores. |
-| R08 | Referência a entidade inexistente | Verificar as relações entre as tabelas de origem. | Sinalizar eventuais referências sem correspondência e impedir que sejam carregadas como relações válidas sem tratamento. |
-| R09 | Normalização de texto | Remover espaços exteriores e uniformizar a representação textual quando adequado. | Aplicar a normalização de forma consistente, preservando os valores originais para auditoria. |
-| R10 | Carregamentos repetidos | Identificar os registos através das chaves da origem e de critérios de atualização. | Definir o processo incremental para evitar a duplicação de registos no Data Mart. |
+| R01 | Clientes 10 e 18 com número de contribuinte e nome normalizados iguais | Comparar o contribuinte normalizado e outros atributos de identificação, preservando os identificadores originais. | Classificar como potenciais duplicados. Não consolidar automaticamente nem eliminar qualquer cliente antes de definir uma regra determinística e preservar as referências às faturas. |
+| R02 | Email e telemóvel em falta em clientes | Distinguir atributos opcionais de atributos obrigatórios para cada análise. | Preservar os valores nulos. A ausência de contacto, por si só, não deve excluir uma venda do Data Mart, salvo se um requisito analítico justificado o exigir. |
+| R03 | Zona em falta em clientes | Verificar o valor de origem e a existência de uma correspondência válida. | Não inferir uma zona. Preservar o valor em falta e definir, no modelo dimensional, o tratamento adequado para a zona desconhecida, se aplicável. |
+| R04 | Atributos de produto em falta | Validar designação, família, categoria, fornecedor, stock e preço de venda de acordo com a utilização analítica de cada atributo. | Preservar os valores originais e sinalizar os campos em falta. Não inventar valores comerciais nem rejeitar automaticamente todos os factos associados sem avaliar o impacto no modelo dimensional. |
+| R05 | 12 linhas de compra sem referência de produto | Identificar referências nulas ou vazias em `purchases_lines.product`. | Manter os registos na Staging Area, encaminhá-los para uma estrutura própria de registos com problemas de qualidade e excluí-los do Data Mart enquanto não for possível identificar o produto de forma fiável. Não atribuir um produto arbitrário. |
+| R06 | Quatro linhas de fatura em que quantidade × preço unitário difere de `line_total` | Comparar o valor registado com o cálculo, preservando os sinais e os valores originais. | Sinalizar os quatro casos para investigação. Não aplicar valores absolutos, inverter sinais ou substituir totais sem confirmação da regra de negócio. Se o problema não puder ser resolvido automaticamente e afetar a fiabilidade das medidas, manter os registos na estrutura própria de rejeições da Staging Area e excluí-los do carregamento analítico. |
+| R07 | Duas faturas em que o total de produtos do cabeçalho difere da soma das linhas | Calcular e registar a diferença entre o cabeçalho e as linhas, com uma tolerância documentada de 0,01 para comparação monetária. | Sinalizar as duas faturas. Não escolher automaticamente um dos totais. Se a discrepância não puder ser corrigida de forma fiável e comprometer as medidas carregadas no Data Mart, manter os registos afetados na estrutura própria de rejeições da Staging Area e excluí-los do carregamento analítico. |
+| R08 | Possíveis referências a entidades inexistentes | Validar as referências não nulas contra as entidades de origem correspondentes. | Os testes atuais não encontraram referências inválidas nas relações verificadas. Se forem detetadas em cargas futuras, sinalizar e manter os registos problemáticos na estrutura própria da Staging Area, excluindo-os do Data Mart até resolução. |
+| R09 | Diferenças de representação textual | Aplicar normalização controlada, como remoção de espaços exteriores e normalização de maiúsculas/minúsculas para comparação. | Utilizar valores normalizados para validação e comparação, sem perder os valores originais. Não modificar nomes ou identificadores de negócio de forma irreversível. |
+| R10 | Repetição de registos em cargas sucessivas | Usar as chaves primárias da origem e os atributos de criação/última atualização disponíveis para identificar registos novos ou alterados. | Implementar carregamento incremental idempotente. Uma nova execução não deve duplicar registos já carregados; a estratégia concreta depende da validação dos campos de auditoria e será especificada na etapa de carregamento incremental. |
 
-## 3. Normalização e identificação de duplicados
+## 3. Classificação dos problemas
 
-A normalização de campos textuais deve ser aplicada antes da comparação de registos, considerando espaços exteriores, diferenças entre maiúsculas e minúsculas e separadores nos números de contribuinte.
+Os registos e atributos devem ser classificados de acordo com a natureza do problema e o efeito sobre as análises:
 
-A normalização não deve alterar os identificadores originais. No caso dos clientes 10 e 18, os resultados observados indicam uma forte possibilidade de duplicação. A consolidação deverá preservar a rastreabilidade dos dois identificadores e das respetivas faturas.
+- **Correção automática segura:** apenas quando a transformação é determinística, por exemplo, remover espaços exteriores para efeitos de comparação, mantendo o valor original.
+- **Atributo opcional em falta:** preservar o valor nulo e permitir o carregamento do registo se este continuar válido para o processo analítico.
+- **Problema por investigar:** preservar os dados, registar a regra violada e não assumir uma correção sem evidência suficiente.
+- **Registo rejeitado do Data Mart:** quando um problema não pode ser corrigido automaticamente e compromete a identificação ou a interpretação correta do facto, manter o registo numa estrutura própria da Staging Area e excluí-lo do carregamento analítico.
 
-## 4. Tratamento dos registos com problemas
+A rejeição deve ser aplicada ao nível do registo e com base no impacto concreto. Um atributo opcional em falta não deve provocar a rejeição de toda a venda sem justificação. Inversamente, uma linha de compra sem produto não deve ser carregada como se o produto fosse conhecido.
 
-Os registos com problemas devem ser classificados de acordo com a possibilidade de tratamento:
+## 4. Normalização e potenciais duplicados
 
-- **Corrigíveis automaticamente:** situações em que existe uma regra determinística e fundamentada, como a remoção de espaços exteriores.
-- **A manter com informação em falta:** atributos opcionais que não impedem a utilização do registo em todas as análises.
-- **A investigar:** casos em que a origem não permite determinar o valor correto, como as linhas de compra sem produto ou as inconsistências financeiras.
-- **A rejeitar do carregamento analítico:** registos que não cumpram os requisitos mínimos de qualidade e não possam ser corrigidos de forma fiável, mantendo-se a informação necessária à sua análise na Staging Area.
+Antes de comparar campos textuais, podem ser aplicadas regras de normalização, tais como remoção de espaços exteriores e uniformização de maiúsculas/minúsculas. Para números de contribuinte, a comparação pode ignorar separadores de formatação, desde que o valor original seja preservado.
 
-A classificação definitiva de cada registo dependerá também dos requisitos do modelo dimensional e das análises pretendidas.
+Os clientes 10 e 18 apresentam o mesmo número de contribuinte normalizado (`502323434`), o mesmo nome normalizado (`EIRA E BEIRA, LDA`) e os mesmos principais atributos de identificação e contacto analisados. São, por isso, **potenciais duplicados**, não duplicados definitivamente confirmados.
 
-## 5. Rastreabilidade
+A consolidação exige uma regra explícita para escolher a referência canónica, mapear os identificadores alternativos e preservar as relações com as faturas. Os resultados do profiling indicam faturas associadas a ambos os clientes; os respetivos valores não podem ser eliminados nem agregados sem uma decisão fundamentada.
 
-Sempre que possível, a Staging Area deverá preservar as chaves de origem, os valores originais relevantes, a identificação da regra aplicada e o motivo pelo qual um registo foi sinalizado ou rejeitado.
+Até essa decisão, ambos os registos devem ser preservados na Staging Area e a ambiguidade deve ser resolvida antes de carregar a dimensão Cliente.
 
-Esta abordagem permite explicar as transformações efetuadas e investigar discrepâncias sem modificar a base de dados operacional.
+## 5. Tratamento dos problemas financeiros
 
-## 6. Limitações
+O profiling identificou quatro linhas de fatura em que `line_total` difere de `quantity × unit_price`, bem como duas faturas cujo total de produtos no cabeçalho diverge da soma dos totais das linhas.
 
-As regras aqui propostas não pressupõem que todas as situações identificadas sejam erros de origem. Em particular, os valores negativos nas linhas de fatura e as diferenças entre cabeçalhos e linhas carecem de confirmação da regra de negócio.
+Os sinais observados podem estar relacionados com convenções de negócio, devoluções ou outros procedimentos, mas os resultados disponíveis não confirmam nenhuma dessas explicações. Assim:
 
-As regras deverão ser revistas após a definição da granularidade, das medidas e das dimensões do Data Mart.
+1. Preservar os valores originais e calcular os indicadores de discrepância numa etapa de validação.
+2. Registar o identificador do documento/linha, a regra violada e a diferença calculada.
+3. Não alterar quantidades, preços ou totais sem uma regra de negócio validada.
+4. Se não existir uma correção determinística e a discrepância afetar a fiabilidade das medidas, manter o registo na estrutura própria de rejeições da Staging Area e excluí-lo do Data Mart.
+
+O custo de expedição está registado ao nível do cabeçalho da fatura. Não deve ser repetido em cada linha de produto nem somado como se fosse uma medida ao nível da linha, pois isso multiplicaria artificialmente o custo. O tratamento dimensional definitivo deve respeitar a granularidade aprovada para os factos.
+
+## 6. Valores em falta e integridade referencial
+
+Os resultados atuais identificam valores em falta em atributos de clientes e produtos e 12 linhas de compra sem produto. Os testes de integridade referencial realizados não encontraram referências inválidas nas relações verificadas; contudo, este resultado não elimina os problemas de completude.
+
+O tratamento deve distinguir:
+
+- **Contactos em falta:** preservar os nulos; não são, por si só, motivo para excluir um facto de venda.
+- **Atributos descritivos de produto em falta:** preservar e sinalizar; avaliar se impedem a identificação ou análise do produto.
+- **Zona em falta:** não inferir a zona; definir tratamento consistente com o modelo dimensional.
+- **Produto em falta numa linha de compra:** não é possível atribuir a linha a um produto conhecido; manter na Staging Area de rejeições e excluir do Data Mart enquanto não for resolvida.
+- **Referência não nula sem correspondência:** sinalizar como problema de integridade e impedir o carregamento da relação inválida.
+
+A utilização de membros desconhecidos no Data Mart só deverá ocorrer quando for compatível com o modelo dimensional e não ocultar um problema que, segundo o enunciado, exige a exclusão do registo do Data Mart.
+
+## 7. Rastreabilidade e auditoria
+
+A Staging Area deverá permitir identificar, sempre que aplicável:
+
+- a tabela e a chave do registo de origem;
+- a execução de extração/carregamento;
+- os valores originais relevantes;
+- o estado de validação;
+- o identificador da regra aplicada;
+- a descrição do problema e a decisão de carregamento ou rejeição.
+
+Os registos que não possam ser corrigidos automaticamente devem ser conservados em estruturas próprias da Staging Area, conforme o enunciado. A sua exclusão do Data Mart não significa apagar os dados da área de preparação nem da origem operacional.
+
+## 8. Limitações e decisões pendentes
+
+As regras são uma especificação de tratamento baseada nos resultados de profiling disponíveis. Não substituem a validação das regras de negócio nem a definição final do modelo dimensional.
+
+Antes da implementação, é necessário confirmar:
+
+- a regra de consolidação dos clientes 10 e 18;
+- o significado dos sinais nas quatro linhas de fatura;
+- a origem das diferenças nas duas faturas;
+- quais os atributos de produto obrigatórios para as análises;
+- a granularidade dos factos e a forma de tratar medidas ao nível do cabeçalho, incluindo o custo de expedição;
+- os campos de auditoria efetivamente fiáveis para o carregamento incremental.
+
+As decisões finais devem ser coerentes com o modelo dimensional e com o requisito de excluir do Data Mart os registos com problemas não corrigíveis automaticamente, mantendo-os em estruturas próprias da Staging Area.
