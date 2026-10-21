@@ -76,7 +76,8 @@ A consulta verificou a presença de valores nulos nos atributos selecionados. A 
 | Email nulo | 12 |
 | Telemóvel nulo | 21 |
 
-O resultado indica ausência de valores nulos no nome, mas identifica um cliente sem número de contribuinte, dois sem zona, 12 sem email e 21 sem telemóvel. A consulta contabiliza valores nulos; os campos vazios ou compostos apenas por espaços devem ser avaliados separadamente, caso não tenham sido incluídos na condição SQL.
+
+O resultado indica ausência de nomes em falta segundo o critério utilizado, mas identifica um cliente sem número de contribuinte, dois sem zona, 12 sem email e 21 sem telemóvel. Para o nome, número de contribuinte, email e telemóvel, a consulta considera tanto valores nulos como cadeias vazias ou compostas apenas por espaços. Para a zona, contabiliza os valores nulos.
 
 ### 4.2. Produtos
 
