@@ -1,103 +1,46 @@
-# Inventário da Base de Dados Operacional - MoreRhythm
+# Resultados do Data Profiling - MoreRhythm
 
-## 1. Objetivo
+## 1. Objetivo e âmbito
 
-Este documento apresenta a estrutura da base de dados operacional MoreRhythm, utilizada como fonte de dados para o desenvolvimento do Data Mart de vendas.
+Este documento apresenta os resultados das consultas de Data Profiling executadas sobre a base de dados operacional `MoreRhythm`, no SQL Server. O objetivo é caracterizar o volume e a estrutura dos dados, identificar problemas de completude, potenciais duplicados, inconsistências financeiras e verificar a integridade referencial.
 
-O inventário identifica as tabelas de negócio, o respetivo volume de registos, as colunas, os tipos de dados, as chaves primárias e as relações entre tabelas. Esta informação serve de base ao Data Profiling e à definição posterior da arquitetura, da Staging Area e do modelo dimensional.
+Os resultados apresentados correspondem às consultas executadas. A identificação de uma anomalia não significa, por si só, que exista um erro de negócio: alguns casos podem exigir confirmação das regras operacionais, nomeadamente quando existem quantidades ou preços negativos.
 
-## 2. Caracterização da origem
+## 2. Resultado 01 - Inventário e estrutura da origem
 
-| Propriedade | Descrição |
-|---|---|
-| Sistema de gestão de bases de dados | Microsoft SQL Server |
-| Base de dados | `MoreRhythm` |
-| Esquema principal | `dbo` |
-| Tabelas de negócio | 12 |
-| Total de registos nas tabelas de negócio | 1 057 |
-| Tabela técnica excluída do inventário de negócio | `sysdiagrams` |
+### 2.1. Número de registos por tabela
 
-O total de 1 057 registos resulta da soma dos registos das 12 tabelas de negócio. A tabela `sysdiagrams`, utilizada para armazenar diagramas da base de dados, foi excluída desta contagem.
+Foram identificadas 12 tabelas de negócio, com um total de **1 057 registos**. A tabela técnica `sysdiagrams` não foi incluída no total de negócio.
 
-## 3. Inventário de tabelas
+| Tabela | Registos |
+|---|---:|
+| `categories` | 11 |
+| `customers` | 26 |
+| `employees` | 6 |
+| `families` | 17 |
+| `invoices` | 37 |
+| `invoices_lines` | 93 |
+| `products` | 67 |
+| `purchases` | 18 |
+| `purchases_lines` | 77 |
+| `stocks_movements` | 686 |
+| `suplliers` | 14 |
+| `zones` | 5 |
+| **Total** | **1 057** |
 
-A contagem foi obtida através de uma consulta aos metadados do SQL Server.
+A tabela `stocks_movements` concentra 686 registos, sendo a tabela com maior volume. Os dados incluem entidades de negócio (clientes, funcionários, produtos, fornecedores e zonas), documentos de faturação e compra, linhas documentais e movimentos de stock.
 
-| Tabela | Registos | Descrição funcional |
-|---|---:|---|
-| `categories` | 11 | Categorias de produtos |
-| `customers` | 26 | Clientes |
-| `employees` | 6 | Funcionários |
-| `families` | 17 | Famílias de produtos |
-| `invoices` | 37 | Cabeçalhos das faturas |
-| `invoices_lines` | 93 | Linhas das faturas |
-| `products` | 67 | Produtos e respetivos atributos |
-| `purchases` | 18 | Cabeçalhos dos documentos de compra |
-| `purchases_lines` | 77 | Linhas dos documentos de compra |
-| `stocks_movements` | 686 | Movimentos de stock |
-| `suplliers` | 14 | Fornecedores |
-| `zones` | 5 | Zonas geográficas |
-| **Total** | **1 057** | |
+### 2.2. Estrutura, tipos de dados e nulabilidade
 
-A tabela `stocks_movements` representa a maior parte dos registos da origem, com 686 movimentos. As tabelas `invoices` e `invoices_lines` contêm, respetivamente, 37 cabeçalhos de fatura e 93 linhas, enquanto as tabelas `purchases` e `purchases_lines` contêm 18 cabeçalhos de compra e 77 linhas.
+A consulta aos metadados devolveu as colunas, posições, tipos, comprimentos, precisão, escala e nulabilidade das tabelas. O inventário detalhado dessa estrutura, incluindo as chaves primárias, está documentado em [`inventario.md`](inventario.md).
 
-O nome `suplliers` é mantido tal como existe na base de dados de origem.
+Os tipos observados incluem `int`, `numeric`, `decimal`, `char`, `varchar`, `date` e `time`. Os campos monetários utilizam maioritariamente `numeric(19,6)`; as quantidades das linhas de fatura e compra utilizam `numeric(14,4)`, enquanto a quantidade dos movimentos de stock utiliza `decimal(12,3)`. Estas precisões devem ser consideradas no desenho da Staging Area e do modelo dimensional para evitar conversões com perda de precisão.
 
-## 4. Organização funcional dos dados
+## 3. Resultado 02 - Chaves estrangeiras e relações
 
-### 4.1. Clientes, funcionários e geografia
+A consulta identificou **16 relações de chave estrangeira** declaradas na origem.
 
-- **`customers`** - identifica os clientes através do número interno e contém informação fiscal, contactos, morada, zona, tipo, vendedor, condições de pagamento e segmento.
-- **`employees`** - contém os dados dos funcionários, incluindo código, nome, grupo, departamento e referência à chefia.
-- **`zones`** - associa códigos a designações de zonas geográficas.
-
-### 4.2. Produtos e classificação
-
-- **`products`** - contém a referência e designação do produto, família, categoria, fornecedor, stock, stock mínimo, preços, classificação e taxa de IVA.
-- **`families`** - contém a referência, o nome e a classificação das famílias de produtos.
-- **`categories`** - contém o código e a designação de cada categoria.
-
-### 4.3. Vendas e faturação
-
-- **`invoices`** - contém os cabeçalhos das faturas, com data, cliente, funcionário, data de pagamento, moeda, total dos produtos, custo de expedição, valores de IVA e total final.
-- **`invoices_lines`** - contém as linhas das faturas, incluindo o identificador da fatura, produto, quantidade, preço unitário, total da linha e IVA.
-
-### 4.4. Compras e fornecedores
-
-- **`suplliers`** - contém a identificação dos fornecedores, contactos, morada, zona, tipo, condições de pagamento e nacionalidade.
-- **`purchases`** - contém os cabeçalhos dos documentos de compra, com fornecedor, funcionário, zona, datas e valores monetários.
-- **`purchases_lines`** - contém as linhas dos documentos de compra, incluindo produto, quantidade, preço unitário e total da linha.
-
-### 4.5. Movimentos de stock
-
-- **`stocks_movements`** - regista os movimentos de stock por produto, com data, documento associado, quantidade, preço unitário, valor total e IVA.
-
-## 5. Chaves primárias
-
-As chaves primárias foram obtidas através dos metadados do SQL Server.
-
-| Tabela | Coluna da chave primária |
-|---|---|
-| `categories` | `Code` |
-| `customers` | `number` |
-| `employees` | `number` |
-| `families` | `reference` |
-| `invoices` | `invoice_stamp_id` |
-| `invoices_lines` | `invoice_line_stamp_id` |
-| `products` | `reference` |
-| `purchases` | `purchase_stamp` |
-| `purchases_lines` | `purchase_line_stamp` |
-| `stocks_movements` | `stock_movement_stamp` |
-| `suplliers` | `number` |
-| `zones` | `code` |
-
-A tabela técnica `sysdiagrams` possui também uma chave primária, `diagram_id`, mas não faz parte do modelo de negócio considerado neste inventário.
-
-## 6. Relações entre tabelas
-
-A consulta às chaves estrangeiras identificou 16 relações declaradas na base de dados.
-
-| Tabela de origem | Coluna de origem | Tabela de destino | Coluna de destino |
+| Tabela de origem | Coluna | Tabela de destino | Coluna de destino |
 |---|---|---|---|
 | `customers` | `zone` | `zones` | `code` |
 | `employees` | `chief` | `employees` | `number` |
@@ -116,69 +59,169 @@ A consulta às chaves estrangeiras identificou 16 relações declaradas na base 
 | `stocks_movements` | `product` | `products` | `reference` |
 | `suplliers` | `zone` | `zones` | `code` |
 
-Estas relações permitem identificar os principais percursos de ligação entre documentos, clientes, funcionários, produtos, fornecedores e zonas. Serão relevantes para definir os mapeamentos para a Staging Area e as relações do futuro modelo dimensional.
+Estas relações documentam as ligações entre documentos e entidades e servem de base aos testes de integridade referencial e ao futuro mapeamento para o Data Mart. O nome `suplliers` é mantido tal como existe na base de dados operacional.
 
-## 7. Tipos de dados e características relevantes
+## 4. Resultado 03 - Valores em falta
 
-A estrutura foi obtida através da vista `INFORMATION_SCHEMA.COLUMNS`, complementada pela consulta das chaves primárias.
+A consulta verificou a presença de valores nulos nos atributos selecionados. A análise apresentada abaixo é limitada aos campos efetivamente incluídos na consulta; não representa uma verificação exaustiva de todos os atributos da base de dados.
 
-Os tipos de dados observados incluem `varchar`, `char`, `numeric`, `decimal`, `int`, `date` e `time`.
+### 4.1. Clientes
 
-### 7.1. Identificadores
+| Indicador | Total |
+|---|---:|
+| Total de clientes | 26 |
+| Nome nulo | 0 |
+| Número de contribuinte nulo | 1 |
+| Zona nula | 2 |
+| Email nulo | 12 |
+| Telemóvel nulo | 21 |
 
-Os identificadores dos clientes, funcionários, fornecedores e zonas utilizam tipos numéricos. As referências dos produtos e famílias são textuais, assim como os identificadores dos documentos e das respetivas linhas.
+O resultado indica ausência de valores nulos no nome, mas identifica um cliente sem número de contribuinte, dois sem zona, 12 sem email e 21 sem telemóvel. A consulta contabiliza valores nulos; os campos vazios ou compostos apenas por espaços devem ser avaliados separadamente, caso não tenham sido incluídos na condição SQL.
 
-Os identificadores dos documentos devem ser preservados durante os processos de extração e transformação, uma vez que permitem relacionar os cabeçalhos com as linhas correspondentes.
+### 4.2. Produtos
 
-### 7.2. Valores monetários e quantidades
+| Indicador | Total |
+|---|---:|
+| Total de produtos | 67 |
+| Designação em falta | 2 |
+| Família em falta | 2 |
+| Categoria nula | 2 |
+| Fornecedor nulo | 12 |
+| Stock nulo | 2 |
+| Preço de venda nulo | 2 |
 
-Os campos monetários utilizam maioritariamente `numeric(19,6)`. As quantidades das linhas de fatura e de compra utilizam `numeric(14,4)`, enquanto a quantidade dos movimentos de stock utiliza `decimal(12,3)`.
+Existem valores em falta em vários atributos de produto. O fornecedor é o campo com mais ocorrências nulas (12). Estes casos devem ser avaliados à luz dos requisitos analíticos e das regras de negócio, sem inventar valores para preencher os campos.
 
-Estas diferenças de precisão devem ser consideradas na definição dos tipos de dados da Staging Area e do Data Mart, evitando arredondamentos ou perdas de precisão durante as transformações.
+### 4.3. Linhas de fatura
 
-### 7.3. Datas e horas
+| Indicador | Total |
+|---|---:|
+| Total de linhas de fatura | 93 |
+| Produto em falta | 0 |
+| Quantidade nula | 0 |
+| Preço unitário nulo | 0 |
+| Total da linha nulo | 0 |
 
-As tabelas operacionais incluem datas de negócio, como `invoice_date`, `document_date` e `movement_date`, e atributos de auditoria, como `create_date`, `create_time`, `last_update_date` e `last_update_time`.
+Não foram identificados valores nulos nos quatro campos analisados para as linhas de fatura. Isto não exclui outras anomalias, como as inconsistências entre quantidade, preço unitário e total da linha descritas na secção 6.
 
-Estes atributos poderão apoiar a identificação de alterações e o planeamento dos carregamentos incrementais. A sua utilização dependerá da análise da fiabilidade e da cobertura dos valores existentes.
+### 4.4. Linhas de compra
 
-### 7.4. Campos anuláveis
+| Indicador | Total |
+|---|---:|
+| Total de linhas de compra | 77 |
+| Produto em falta | 12 |
+| Quantidade nula | 0 |
+| Preço unitário nulo | 0 |
+| Total da linha nulo | 0 |
 
-A nulabilidade declarada na estrutura não corresponde necessariamente à presença efetiva de valores nulos. Por esse motivo, foi realizada uma análise adicional dos dados, cujos resultados são documentados no ficheiro `resultados.md`.
+Foram identificadas **12 linhas de compra sem produto**. Em conjunto, estas linhas representam uma quantidade total de **319,0000** e um valor total de **12 615,300000**.
 
-## 8. Observações iniciais sobre a qualidade dos dados
+Estas linhas têm informação quantitativa e financeira, mas não permitem identificar o produto associado. Devem ser preservadas na Staging Area e sinalizadas para análise; não deverá ser inventada uma referência de produto nem carregadas como compras de um produto arbitrário.
 
-A análise preliminar identificou situações que devem ser consideradas na preparação dos dados:
+## 5. Resultado 04 - Potenciais duplicados de clientes
 
-- Existem dois registos de cliente com o mesmo número de contribuinte e o mesmo nome normalizado: clientes 10 e 18.
-- Existem clientes sem determinados dados de contacto e sem zona geográfica associada.
-- Existem produtos com atributos em falta, incluindo designação, família, categoria e fornecedor.
-- Existem 12 linhas de compra sem produto identificado.
-- Foram observadas diferenças entre o total de produtos de algumas faturas e a soma dos totais das respetivas linhas.
-- Foram identificadas linhas de fatura com quantidades ou preços negativos, cuja interpretação exige análise adicional.
+A consulta identificou dois registos que coincidem tanto no número de contribuinte normalizado como no nome normalizado.
 
-Estas observações são desenvolvidas no relatório de Data Profiling. Não se deve assumir que todas as situações correspondem a erros: algumas podem resultar de regras de negócio, devoluções ou particularidades dos documentos.
+| Critério | Valor normalizado | Ocorrências | Números de cliente |
+|---|---|---:|---|
+| Número de contribuinte | `502323434` | 2 | 10, 18 |
+| Nome | `EIRA E BEIRA, LDA` | 2 | 10, 18 |
 
-## 9. Validação inicial da integridade referencial
+Os registos apresentam os mesmos valores nos principais atributos de identificação e contacto apresentados pela consulta: nome, contribuinte, telefone, contacto, email, morada, localidade, código postal, zona, tipo, vendedor, condições de pagamento, BBAN e segmento. Diferem nos atributos de auditoria: o cliente 10 foi criado em 2025-03-31 e tem última atualização em 2025-07-07; o cliente 18 foi criado em 2025-05-31 e tem última atualização em 2025-11-11.
 
-Foram executados testes para verificar a existência de registos sem correspondência nas principais relações entre documentos e entidades.
+A consulta às faturas associadas devolveu os seguintes resultados:
+
+| Número de cliente | Número de faturas | Total faturado | Primeira fatura | Última fatura |
+|---:|---:|---:|---|---|
+| 10 | 1 | 90,360000 | 2025-03-31 | 2025-03-31 |
+| 18 | 1 | 471,880000 | 2025-03-31 | 2025-03-31 |
+
+Estes resultados sustentam a classificação dos registos 10 e 18 como **potenciais duplicados**. A consolidação não deve ser automática nesta fase: é necessário definir qual a referência a manter e garantir que as faturas e restantes relações continuam rastreáveis. Os valores faturados devem ser preservados e não somados ou descartados sem uma regra explícita de consolidação.
+
+## 6. Resultado 05 - Inconsistências financeiras
+
+### 6.1. Divergência entre quantidade × preço unitário e total da linha
+
+A consulta identificou quatro linhas de fatura em que `line_total` difere do cálculo `quantity × unit_price`.
+
+| Identificador da linha | Quantidade | Preço unitário | Total registado | Quantidade × preço | Diferença |
+|---|---:|---:|---:|---:|---:|
+| `ADM06013159093,4010000-3` | -2 | 473,00 | 946,00 | -946,00 | 1 892,00 |
+| `ADM06022868091,8280000-3` | -1 | 662,00 | 662,00 | -662,00 | 1 324,00 |
+| `ADM06013159092,6190000-3` | 1 | -140,00 | 140,00 | -140,00 | 280,00 |
+| `ADM06033159385,9470000-3` | 10 | -13,00 | 130,00 | -130,00 | 260,00 |
+
+Nas quatro linhas, o total registado corresponde ao valor absoluto do produto entre quantidade e preço unitário, enquanto o cálculo com sinal produz um valor negativo. O padrão é compatível com uma possível regra de sinal aplicada aos valores da linha, mas a consulta, por si só, não permite confirmar se é uma convenção de negócio ou um erro de dados.
+
+Por isso, não se deverá substituir automaticamente o total registado, inverter sinais ou aplicar valores absolutos a todos os registos. Os quatro casos devem ser sinalizados para validação da regra de negócio.
+
+### 6.2. Divergência entre o total do cabeçalho e a soma das linhas
+
+Foram identificadas duas faturas em que o total de produtos do cabeçalho difere da soma dos totais das linhas.
+
+| Identificador da fatura | Data | Total de produtos no cabeçalho | N.º de linhas | Soma dos totais das linhas | Diferença (cabeçalho − linhas) |
+|---|---|---:|---:|---:|---:|
+| `ADM06013159092,572514309` | 2025-01-31 | 145,00 | 1 | 140,00 | 5,00 |
+| `ADM06022859337,463265852` | 2025-02-28 | 234,00 | 3 | 239,00 | -5,00 |
+
+As divergências são de 5,00 em ambos os documentos, com sinais opostos. Os valores devem ser mantidos e as faturas sinalizadas para análise. Não existe informação suficiente nesta consulta para determinar qual dos valores é o correto ou explicar a diferença.
+
+### 6.3. Moeda e valores dos cabeçalhos
+
+Na listagem devolvida pela consulta, os registos apresentados usam a moeda `EURO`. Os cabeçalhos incluem total de produtos, custo de expedição, total para IVA, valor de IVA e total final. Esta observação deve ser interpretada de acordo com o conjunto efetivamente devolvido pela consulta; não deve ser generalizada para registos que não tenham sido incluídos no resultado.
+
+## 7. Resultado 06 - Integridade referencial
+
+Os testes executados não identificaram registos sem correspondência nas relações verificadas.
 
 | Teste | Registos sem correspondência |
 |---|---:|
 | Linhas de fatura sem cabeçalho | 0 |
 | Linhas de compra sem cabeçalho | 0 |
-| Movimentos de stock sem produto correspondente | 0 |
-| Linhas de fatura com produto inexistente | 0 |
-| Linhas de compra com produto inexistente, excluindo valores nulos | 0 |
+| Movimentos de stock sem produto | 0 |
+| Linhas de fatura sem produto correspondente | 0 |
+| Linhas de compra com produto inexistente (produto não nulo) | 0 |
 | Faturas com cliente inexistente | 0 |
 | Faturas com funcionário inexistente | 0 |
 
-Os resultados indicam que não foram encontrados registos órfãos nos testes realizados. No entanto, este resultado não significa que todos os campos estejam preenchidos ou que todos os valores sejam consistentes do ponto de vista do negócio. Por exemplo, as linhas de compra sem produto identificado não são necessariamente registos órfãos: o campo do produto pode estar nulo, embora o cabeçalho da compra exista.
+Os resultados indicam que os registos verificados têm correspondência nas entidades relacionadas. Contudo, **integridade referencial e completude são dimensões diferentes da qualidade**: as 12 linhas de compra sem produto não foram classificadas como referências a produtos inexistentes, porque o valor do produto está em falta. A ausência de registos órfãos nos testes realizados também não demonstra que todos os valores financeiros ou atributos estejam corretos.
 
-## 10. Conclusão
+## 8. Síntese dos problemas identificados
 
-A base de dados MoreRhythm contém 12 tabelas de negócio e 1 057 registos, abrangendo clientes, funcionários, produtos, fornecedores, faturação, compras, movimentos de stock e zonas geográficas.
+| Problema | Evidência | Implicação para o Data Mart |
+|---|---|---|
+| Número de contribuinte em falta | 1 cliente | Avaliar se o atributo é obrigatório para a dimensão Cliente e sinalizar o registo |
+| Zona de cliente em falta | 2 clientes | Não inferir a zona; definir tratamento compatível com o modelo dimensional |
+| Email em falta | 12 clientes | Preservar o valor e avaliar a sua relevância analítica |
+| Telemóvel em falta | 21 clientes | Preservar o valor e avaliar a sua relevância analítica |
+| Atributos de produto em falta | 2 designações, 2 famílias, 2 categorias, 12 fornecedores, 2 stocks e 2 preços de venda | Validar campos necessários para as análises e sinalizar os casos |
+| Linhas de compra sem produto | 12 linhas; quantidade 319; valor 12 615,30 | Manter na Staging Area e não associar a um produto arbitrário |
+| Potenciais duplicados de clientes | Clientes 10 e 18 | Definir uma regra de deduplicação e preservar a rastreabilidade |
+| Inconsistência de cálculo em linhas de fatura | 4 linhas | Confirmar a regra de sinal antes de corrigir ou rejeitar |
+| Divergência entre cabeçalho e linhas | 2 faturas; diferença de 5,00 e -5,00 | Sinalizar e investigar, sem substituir automaticamente os valores |
+| Integridade referencial | 0 registos sem correspondência nos testes executados | Resultado favorável limitado às relações e aos testes realizados |
 
-A estrutura relacional e as chaves estrangeiras identificadas permitem compreender as principais dependências entre entidades e documentos. Contudo, a análise dos dados revelou situações que exigem tratamento antes da construção do Data Mart, sobretudo duplicados de clientes, campos incompletos e inconsistências nos valores das faturas.
+## 9. Conclusões e implicações para a Staging Area
 
-O inventário constitui, assim, a referência estrutural para as próximas atividades: consolidação do Data Profiling, definição das regras de limpeza, preparação da Staging Area e mapeamento dos dados para o modelo dimensional.
+O profiling revelou que a base de dados possui relações referenciais consistentes nos testes realizados, mas contém problemas de completude, potenciais duplicados e divergências financeiras que devem ser considerados no desenho do processo de preparação dos dados.
+
+As prioridades identificadas são:
+
+1. Preservar e sinalizar as 12 linhas de compra sem produto identificado.
+2. Definir uma política explícita para os potenciais duplicados de clientes 10 e 18, sem perder a rastreabilidade das faturas.
+3. Investigar as quatro linhas de fatura com discrepâncias entre quantidade, preço e total.
+4. Investigar as duas faturas cujo total de produtos diverge da soma das linhas.
+5. Definir regras para atributos em falta com base na sua obrigatoriedade e utilização no modelo dimensional.
+
+De acordo com os requisitos do trabalho, os registos com problemas de qualidade cuja correção não possa ser automatizada devem ser armazenados em estruturas próprias da Staging Area e não carregados no Data Mart. A correção manual e o posterior carregamento desses registos ficam fora do âmbito definido para o trabalho.
+
+## 10. Consultas de origem
+
+Os resultados foram obtidos através dos scripts SQL guardados na pasta [`sql/`](sql/):
+
+- [`01_inventario.sql`](sql/01_inventario.sql) - contagem de registos e metadados da origem;
+- [`02_chaves_relacoes.sql`](sql/02_chaves_relacoes.sql) - chaves e relações;
+- [`03_qualidade_dados.sql`](sql/03_qualidade_dados.sql) - valores em falta;
+- [`04_duplicados_clientes.sql`](sql/04_duplicados_clientes.sql) - potenciais duplicados de clientes;
+- [`05_inconsistencias_financeiras.sql`](sql/05_inconsistencias_financeiras.sql) - discrepâncias financeiras;
+- [`06_integridade_referencial.sql`](sql/06_integridade_referencial.sql) - testes de integridade referencial.
