@@ -1,0 +1,29 @@
+erDiagram
+    Dim_Data ||--o{ Fact_Vendas : "SK_Data_Fatura"
+    Dim_Data ||--o{ Fact_Vendas : "SK_Data_Pagamento"
+    Dim_Cliente ||--o{ Fact_Vendas : "SK_Cliente"
+    Dim_Produto ||--o{ Fact_Vendas : "SK_Produto"
+    Dim_Fornecedor ||--o{ Fact_Vendas : "SK_Fornecedor"
+    Dim_Funcionario ||--o{ Fact_Vendas : "SK_Funcionario"
+    Dim_Moeda ||--o{ Fact_Vendas : "SK_Moeda"
+    Dim_Moeda ||--o{ Dim_Taxa_Cambio : "SK_Moeda"
+    Dim_Data ||--o{ Dim_Taxa_Cambio : "SK_Data"
+    Fact_Vendas {
+        bigint SK_Venda PK
+        int SK_Data_Fatura FK
+        int SK_Data_Pagamento FK
+        int SK_Cliente FK
+        int SK_Produto FK
+        int SK_Fornecedor FK
+        int SK_Funcionario FK
+        smallint SK_Moeda FK
+        char Numero_Fatura "dimensao degenerada"
+        char BK_Linha_Fatura UK
+        decimal Quantidade
+        decimal Valor_Liquido
+        decimal Valor_IVA
+        decimal Frete_Alocado
+        decimal Valor_Liquido_EUR
+        decimal Valor_IVA_EUR
+        decimal Frete_Alocado_EUR
+    }
