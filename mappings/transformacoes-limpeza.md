@@ -91,17 +91,27 @@ A Staging Area deverá permitir identificar, sempre que aplicável:
 
 Os registos que não possam ser corrigidos automaticamente devem ser conservados em estruturas próprias da Staging Area, conforme o enunciado. A sua exclusão do Data Mart não significa apagar os dados da área de preparação nem da origem operacional.
 
-## 8. Limitações e decisões pendentes
+## 8. Contrato de carregamento e decisões fechadas
 
-As regras são uma especificação de tratamento baseada nos resultados de profiling disponíveis. Não substituem a validação das regras de negócio nem a definição final do modelo dimensional.
+As regras desta especificação são aplicadas pela ordem seguinte:
 
-Antes da implementação, é necessário confirmar:
+1. Extrair o valor original e os metadados técnicos para a Staging Area.
+2. Normalizar apenas cópias de comparação e calcular os indicadores de validação.
+3. Aplicar as correções determinísticas permitidas.
+4. Classificar cada registo como `VALID`, `CORRIGIDO`, `PENDENTE` ou `REJEITADO`.
+5. Carregar para o Data Mart apenas registos `VALID` ou `CORRIGIDO`.
 
-- a regra de consolidação dos clientes 10 e 18;
-- o significado dos sinais nas quatro linhas de fatura;
-- a origem das diferenças nas duas faturas;
-- quais os atributos de produto obrigatórios para as análises;
-- a granularidade dos factos e a forma de tratar medidas ao nível do cabeçalho, incluindo o custo de expedição;
-- os campos de auditoria efetivamente fiáveis para o carregamento incremental.
+Ficam fechadas as seguintes decisões para a Fase 1:
 
-As decisões finais devem ser coerentes com o modelo dimensional e com o requisito de excluir do Data Mart os registos com problemas não corrigíveis automaticamente, mantendo-os em estruturas próprias da Staging Area.
+- **Clientes 10 e 18:** são potenciais duplicados, mas não existe confirmação de negócio. Não são consolidados nem eliminados automaticamente. Ambos permanecem na Staging e são carregados como clientes distintos, com `duplicate_group_id` comum e estado `PENDING_REVIEW`. Uma futura consolidação exige um mapa explícito entre as chaves de origem e o sobrevivente; até lá, as duas faturas mantêm o respetivo cliente de origem.
+- **Quantidades e preços negativos:** não são convertidos para valores absolutos nem reinterpretados como devoluções. As quatro linhas financeiras e as respetivas faturas são `REJEITADO` até existir confirmação da semântica.
+- **Divergências de cabeçalho:** as duas faturas com diferença entre o total de produtos e a soma das linhas são rejeitadas integralmente. A rejeição ao nível da fatura preserva a reconciliação do frete alocado.
+- **Produto desconhecido em compras:** as 12 linhas ficam em `stg_rejections` com os valores originais; não entram no Data Mart de vendas.
+- **Membro desconhecido:** só é usado para atributos descritivos ausentes que não impedem a identificação do facto, por exemplo fornecedor, zona ou contacto. Nunca substitui uma referência de produto, cliente, documento, quantidade, preço ou total inválida.
+- **Contactos opcionais:** permanecem `NULL`. Valores vazios são normalizados para `NULL` numa coluna transformada, conservando o valor bruto.
+- **Vendas com IVA:** `Valor_Liquido + Valor_IVA`, sem frete. O frete apenas entra em `Total_Faturado` e nas análises que o pedem explicitamente. A origem indica IVA ao nível dos produtos, pelo que não se presume IVA sobre o frete.
+- **Frete:** é alocado proporcionalmente ao valor líquido das linhas válidas da fatura, arredondado a 6 casas, e o resíduo é atribuído à última linha por ordem estável de `invoice_line_stamp_id`. Se alguma linha da fatura for rejeitada, a fatura inteira é rejeitada.
+- **Moeda:** a taxa é obtida de uma fonte de câmbio versionada por moeda e data da fatura. Para EUR a taxa é 1. Se não existir taxa aplicável, o registo fica rejeitado; não se usa a taxa do dia anterior sem regra documentada.
+- **Idempotência:** `source_table + source_pk + load_id` identifica a extração e `source_table + source_pk` identifica o registo lógico. O Data Mart usa as chaves de negócio e `MERGE`/upsert controlado; repetir o mesmo lote não cria factos adicionais.
+
+Estas decisões substituem as formulações de “decisão pendente” existentes nos documentos e devem ser usadas como referência pelos mapeamentos e pelo ETL.

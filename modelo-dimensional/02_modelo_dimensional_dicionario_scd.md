@@ -120,7 +120,7 @@ Membro especial: SK = −1 ("Sem data"), usado em `SK_Data_Pagamento` quando nã
 
 ### 3.3 `Dim_Cliente`
 
-Origem: `customers` + `zones`. **Um cliente = um registo "dourado"** (ver §5, clientes duplicados).
+Origem: `customers` + `zones`. **Um cliente de origem = uma chave de negócio**; potenciais duplicados não são consolidados automaticamente (ver §6).
 
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
@@ -276,7 +276,7 @@ A origem regista data/hora de criação e de cada alteração (`create_*`, `last
 O data profiling do Patrick (`data-profiling/resultados.md`, §5) classifica os clientes 10 e 18 como **potenciais duplicados** (mesmo NIF normalizado `502323434` e mesmo nome normalizado *EIRA E BEIRA, LDA*; cada um tem 1 fatura, de 90,36 e 471,88). A proposta do modelo é:
 
 - Um **mapa** `Map_Cliente (BK_Origem → BK_Sobrevivente)` é criado na Staging, mantendo sempre os identificadores originais (regra R01 do Patrick: não eliminar nenhum cliente de origem).
-- A `Dim_Cliente` só tem os sobreviventes; as faturas dos duplicados apontam para o `SK_Cliente` do sobrevivente, sem perder valores (as duas faturas continuam como duas linhas de factos distintas).
+- A `Dim_Cliente` mantém ambos enquanto o estado for `PENDING_REVIEW`; as faturas apontam para o respetivo cliente de origem. Só após aprovação explícita será criado um mapa para um sobrevivente, sem perder as duas linhas de factos.
 - **Duplicados exatos:** o mesmo NIF (válido, diferente de `N/D` e `000000000`) **e** o mesmo nome normalizado (maiúsculas, acentos, espaços e pontuação). Casos 10 e 18.
 - **Duplicados aproximados:** mesmo NIF com nome/morada quase iguais, ou nome muito semelhante com a mesma morada ou email. Regras e limiares a definir com o Patrick; os casos duvidosos **não** são fundidos automaticamente e vão para revisão.
 - **Critério do sobrevivente:** o registo com atualização mais recente (`last_update`); em caso de empate, o de menor número.
@@ -304,12 +304,12 @@ Princípio comum: **atributo descritivo em falta → membro "Desconhecido" (vis�
 
 Todas as 10 análises estão cobertas pelas dimensões e atributos descritos na [matriz de requisitos](01_matriz_requisitos_analiticos.md). Os atributos exigidos (semestre, quadrimestre, semana, estação, fim de semana, último dia do mês, zona, cidade, tipo de cliente, categoria, família, produto, fornecedor, zona do fornecedor, funcionário) existem todos.
 
-## 8. Pontos em aberto (a fechar com o Patrick)
+## 8. Decisões fechadas para a Fase 1
 
-1. **4 linhas de fatura** com sinal incerto (2 com quantidade negativa, 2 com preço negativo): confirmar se são devoluções. Proposta: rejeitar a fatura até confirmar (§6.1).
-2. **2 faturas** com cabeçalho ≠ soma das linhas (145 vs. 140; 234 vs. 239): proposta de rejeição da fatura inteira.
-3. Confirmar a política **"Desconhecido" vs. rejeição** (§6.1) com o Patrick e acertar a sua regra R04 (que não rejeita automaticamente atributos descritivos em falta).
-4. Regras de **duplicados aproximados** (limiares) e critério do sobrevivente.
-5. Definição de **"vendas com IVA"** (com ou sem frete), ver [matriz](01_matriz_requisitos_analiticos.md).
-6. **Classificação**: `products.classification` vs. `families.classification` (as duas existem; a do produto está vazia em 2 produtos).
-7. **Expansão futura:** quando existir uma sucursal no Reino Unido, acrescentar `Dim_Filial` à tabela de factos (com um membro "Sede Porto" para o histórico).
+1. As **4 linhas de fatura** com quantidade ou preço negativo ficam rejeitadas até confirmação da semântica; não são convertidas para positivos.
+2. As **2 faturas** com cabeçalho diferente da soma das linhas são rejeitadas integralmente.
+3. Um atributo descritivo em falta usa o membro `Desconhecido`; uma chave, medida ou relação inválida é rejeitada na Staging.
+4. Os clientes 10 e 18 continuam separados e marcados como potenciais duplicados; não há critério automático de sobrevivente.
+5. **Vendas com IVA** significa `Valor_Liquido + Valor_IVA`, sem frete. O frete só entra em `Total_Faturado` e nas análises de frete.
+6. A classificação de produto usa `products.classification`; quando ausente, usa `families.classification` apenas como fallback documentado e marca a origem do valor.
+7. A taxa de câmbio é a taxa por moeda e data da fatura; EUR usa 1. Na ausência de taxa, o registo é rejeitado.

@@ -226,3 +226,17 @@ Os resultados foram obtidos através dos scripts SQL guardados na pasta [`sql/`]
 - [`04_duplicados_clientes.sql`](sql/04_duplicados_clientes.sql) - potenciais duplicados de clientes;
 - [`05_inconsistencias_financeiras.sql`](sql/05_inconsistencias_financeiras.sql) - discrepâncias financeiras;
 - [`06_integridade_referencial.sql`](sql/06_integridade_referencial.sql) - testes de integridade referencial.
+
+## 11. Decisões de qualidade adotadas
+
+Os resultados anteriores justificam as regras de carregamento documentadas em
+[`transformacoes-limpeza.md`](../mappings/transformacoes-limpeza.md):
+
+- os clientes 10 e 18 ficam preservados e marcados como potenciais duplicados, sem consolidação automática;
+- as 12 linhas de compras sem produto ficam rejeitadas na Staging e fora do Data Mart de vendas;
+- as quatro linhas com quantidade ou preço negativo ficam rejeitadas até ser confirmada a sua semântica;
+- as duas faturas com divergência entre cabeçalho e linhas ficam rejeitadas integralmente;
+- contactos e atributos descritivos ausentes podem usar `NULL` ou membro `Desconhecido`, mas nunca substituem chaves ou medidas inválidas;
+- a comparação financeira usa tolerância de `0,01` e preserva os valores originais.
+
+Assim, o profiling deixa de ser apenas inventário de anomalias e passa a justificar diretamente as regras R01–R10, as estruturas de rejeição e o critério de exclusão do Data Mart.

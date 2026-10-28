@@ -107,4 +107,51 @@ O profiling identificou valores em falta em atributos de clientes, produtos e li
 
 A implementação deste mapeamento deverá permitir obter uma cópia rastreável dos dados operacionais na Staging Area, preparada para a execução das regras de qualidade e transformação.
 
-O mapeamento constitui uma especificação documental inicial. A definição física das tabelas, os tipos definitivos, os mecanismos de extração e a política de carregamento incremental serão detalhados nas etapas seguintes do trabalho.
+O mapeamento constitui a especificação da Fase 1. A estrutura técnica mínima executável está em [`03_ddl_staging_area.sql`](03_ddl_staging_area.sql); as tabelas tipadas `stg_<origem>` devem ser geradas a partir do inventário da origem, sem alterar os valores raw.
+
+## 9. Contrato físico da Staging Area
+
+Cada tabela `stg_<origem>` mantém as colunas de negócio da origem, sem conversão destrutiva, e acrescenta os metadados seguintes:
+
+| Coluna | Tipo SQL Server | Regra |
+|---|---|---|
+| `stg_row_id` | `bigint IDENTITY` | Identificador técnico da cópia |
+| `load_id` | `bigint` | Identifica a execução em `stg_load_control` |
+| `source_table` | `sysname` | Nome da tabela de origem |
+| `source_pk` | `nvarchar(250)` | Chave primária serializada de forma estável |
+| `extraction_timestamp` | `datetime2(3)` | Instante UTC da extração |
+| `validation_status` | `varchar(20)` | `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED` |
+| `validation_rule` | `varchar(10)` | Regra R01–R10, quando aplicável |
+| `validation_message` | `nvarchar(1000)` | Mensagem legível da validação |
+| `raw_row_hash` | `varbinary(32)` | Hash dos valores de origem, para idempotência |
+
+O `source_pk` é composto por `coluna=valor` em ordem alfabética das colunas da chave, usando `|` como separador. A chave não depende da ordem física da tabela. A tabela de origem nunca é atualizada pelo processo.
+
+### 9.1. Controlo de lotes e rejeições
+
+`stg_load_control` regista `load_id`, origem, início/fim, contagens extraídas, válidas, rejeitadas e estado do lote. `stg_rejections` regista uma linha por registo e regra violada, incluindo `load_id`, `source_table`, `source_pk`, `raw_row_json`, `validation_rule`, `validation_message`, `rejected_at` e `resolution_status`. Assim, uma rejeição conserva os valores originais mesmo que a estrutura normalizada seja alterada.
+
+As 12 linhas de compras sem produto usam `R05`; as quatro linhas financeiras usam `R06`; as duas faturas divergentes usam `R07`. Uma linha rejeitada por R06 rejeita a fatura inteira, para que o frete só seja alocado sobre um conjunto completo de linhas.
+
+### 9.2. Mapeamento coluna a coluna e validação
+
+| Origem → Staging | Tipo preservado | Transformação de carga | Validação |
+|---|---|---|---|
+| Todas as colunas de `categories`, `customers`, `employees`, `families`, `invoices`, `invoices_lines`, `products`, `purchases`, `purchases_lines`, `stocks_movements`, `suplliers`, `zones` | Tipo, precisão e escala da origem | Cópia 1:1; `NULL` permanece `NULL`; espaços só são removidos numa coluna de comparação | Chave primária não nula; hash e metadados obrigatórios |
+| `customers.taxpayer_number`, nome, email e morada | Tipo da origem + colunas normalizadas | `normalised_*` apenas para comparação; vazio torna-se `NULL` na coluna transformada | R01 para colisões; não fundir sem aprovação |
+| `invoices_lines.quantity`, `unit_price`, `line_total` | `decimal(14,4)` / `decimal(19,6)` | Preservar sinal e precisão | R06 quando `line_total <> quantity * unit_price` |
+| `invoices.total_products` e linhas da fatura | `decimal(19,6)` | Calcular `line_sum` e `header_line_difference` | R07 quando `ABS(difference) > 0,01` |
+| `purchases_lines.product` | Tipo da origem | Nenhuma substituição | R05 quando nulo ou vazio |
+
+### 9.3. Staging → Data Mart
+
+| Staging | Destino | Transformação / chave |
+|---|---|---|
+| `stg_customers` | `Dim_Cliente` | BK `customers.number`; SCD1/SCD2 conforme dicionário; zona desconhecida usa membro técnico |
+| `stg_products` + `stg_families` + `stg_categories` | `Dim_Produto` | BK `products.reference`; SCD2 para classificação; fallback de classificação documentado |
+| `stg_suplliers` + `stg_zones` | `Dim_Fornecedor` | BK `suplliers.number`; `-1` apenas quando fornecedor é descritivo e nulo |
+| `stg_employees` | `Dim_Funcionario` | BK `employees.number`; pesquisa temporal da versão SCD2 |
+| `stg_invoices` + `stg_invoices_lines` | `Fact_Vendas` | Uma linha por `invoice_line_stamp_id`; rejeitar a fatura se R06/R07; resolver SK pela data da fatura |
+| `stg_load_control` | `Fact_Vendas.ID_Lote_ETL` | Preservar o `load_id` do lote que inseriu ou atualizou |
+
+As chaves substitutas são resolvidas por `BK` e pelo intervalo `Data_Inicio <= invoice_date <= Data_Fim`. A dimensão é carregada antes dos factos. A carga do facto é um upsert por `BK_Linha_Fatura`; o mesmo `raw_row_hash` não é reaplicado. O frete é alocado na Staging, com o resíduo de arredondamento na última linha por identificador estável, e validado antes do insert.

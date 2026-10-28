@@ -47,7 +47,7 @@ Os valores são guardados na moeda original e em euros, juntamente com a taxa de
 
 O diagrama está na Figura 1 (`diagrama_modelo_dimensional.png`) e o dicionário de dados completo (tipos, chaves, nulabilidade) no Anexo B.
 
-As **medidas** são aditivas (quantidade, valor líquido, IVA, frete alocado); o preço unitário é não aditivo e só se agrega por média. Os valores "com IVA" e "total faturado" são medidas calculadas, para evitar redundância e inconsistências.
+As **medidas** são aditivas (quantidade, valor líquido, IVA, frete alocado); o preço unitário é não aditivo e só se agrega por média. "Vendas com IVA" é `Valor_Liquido + Valor_IVA`, sem frete; "Total faturado" é `Valor_Liquido + Valor_IVA + Frete_Alocado`. Estas medidas são calculadas, para evitar redundância e inconsistências.
 
 **Dimensões conformes e chaves:** todas as dimensões usam chaves substitutas, mais a chave de negócio para mapeamento. Cada dimensão tem um membro "Desconhecido" (SK −1) para valores em falta que não impeçam o carregamento.
 
@@ -76,7 +76,7 @@ Justificação: se um cliente mudar de zona, as vendas passadas devem manter-se 
 
 ## 7. Clientes duplicados
 
-Os clientes duplicados (exatos ou aproximados) são consolidados num único registo sobrevivente em `Dim_Cliente`. A Staging mantém um mapa entre o identificador de origem e o sobrevivente, e as faturas dos duplicados apontam para o sobrevivente, sem perda de valores. Na amostra, o data profiling identificou como potenciais duplicados o cliente *Eira e Beira, lda* (NIF 502323434), registado com os números 10 e 18.
+Os clientes potencialmente duplicados não são consolidados automaticamente. Os clientes 10 e 18 permanecem distintos, com o mesmo grupo de revisão na Staging, até existir confirmação explícita; as duas faturas conservam o identificador do respetivo cliente. Na amostra, o data profiling identificou como potenciais duplicados o cliente *Eira e Beira, lda* (NIF 502323434), registado com os números 10 e 18.
 
 ## 7.1 Dados em falta e registos rejeitados
 
@@ -86,10 +86,10 @@ O modelo segue um princípio comum com as regras de limpeza da Staging: um **atr
 
 Os atributos pedidos pelas dez análises (semestre, quadrimestre, semana, estação, fim de semana, último dia do mês, zona, cidade, tipo de cliente, categoria, família, produto, fornecedor, zona do fornecedor, funcionário) existem todos no modelo, ao nível da granularidade escolhida. Os níveis de *drill down* e *roll up* exigidos correspondem às hierarquias da secção 5. Um conjunto adicional de análises (evolução temporal, rankings, devoluções, prazo de pagamento, peso do frete, vendas por país) também é suportado (Anexo A, §3).
 
-## 9. Decisões a rever em conjunto
+## 9. Decisões fechadas
 
-- Definição de "vendas com IVA" (com ou sem frete).
-- Significado do sinal nas 4 linhas de fatura com total incoerente (devoluções?) e tratamento das 2 faturas em que o cabeçalho não coincide com a soma das linhas (proposta: rejeitar a fatura).
-- Política "Desconhecido" vs. rejeição (secção 7.1) e a sua articulação com as regras R01–R10 da Staging.
-- Critérios de deteção de duplicados aproximados.
-- Mapeamentos Staging → Data Mart, conforme o dicionário do Anexo B.
+- "Vendas com IVA" é `Valor_Liquido + Valor_IVA`, sem frete.
+- As 4 linhas com sinal negativo e as 2 faturas com totais divergentes são rejeitadas até validação de negócio.
+- "Desconhecido" é reservado a atributos descritivos; chaves, medidas e relações inválidas são rejeitadas.
+- Duplicados aproximados ficam em revisão e não são fundidos automaticamente.
+- O mapeamento Staging → Data Mart e as regras de rejeição são os definidos em `mappings/source-to-staging.md` e `mappings/transformacoes-limpeza.md`.

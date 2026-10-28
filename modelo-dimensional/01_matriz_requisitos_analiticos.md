@@ -16,12 +16,12 @@
 
 | Medida derivada | Fórmula |
 |---|---|
-| Vendas com IVA (produtos) | Valor líquido + Valor IVA |
+| Vendas com IVA (produtos) | Valor líquido + Valor IVA; não inclui frete |
 | Vendas sem IVA com frete | Valor líquido + Frete alocado |
 | Total faturado | Valor líquido + Frete alocado + Valor IVA (reconcilia com `invoices.final_total`) |
 | Nº de faturas | `DISTINCT COUNT` de `numero_fatura` |
 
-> **Confirmar com o Patrick / docente:** no enunciado, "com IVA" é lido como `líquido + IVA` e o frete só entra quando é pedido explicitamente (análises 2 e 9). Na BD, o IVA incide só sobre os produtos, não sobre o frete.
+> Decisão da Fase 1: "com IVA" é `líquido + IVA` e não inclui frete. O frete só entra quando é pedido explicitamente; na BD, o IVA incide só sobre os produtos.
 
 ## 2. Matriz das 10 análises do enunciado
 
