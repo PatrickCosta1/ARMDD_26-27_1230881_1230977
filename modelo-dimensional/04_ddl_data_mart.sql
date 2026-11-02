@@ -4,7 +4,16 @@
   Ordem: dimensoes -> factos -> membros "Desconhecido" -> dados de apoio
   Nota: o nome da base de dados e configuravel no projeto SSIS (parametros);
         aqui usa-se MoreRhythm_DM por omissao.
+  Convencao SCD2: a 1.a versao de cada BK comeca em 1900-01-01 (para que factos
+        historicos encontrem versao); ao abrir nova versao, a anterior fecha com
+        Data_Fim = Data_Inicio_nova - 1 dia (intervalos sem sobreposicao).
+  Hash_SCD1 / Hash_SCD2: SHA2_256 das colunas SCD1 / SCD2 normalizadas, usados
+        pelo ETL para detetar alteracoes sem comparar coluna a coluna.
 ==============================================================================*/
+-- indices filtrados exigem QUOTED_IDENTIFIER ON (sqlcmd/SSIS tem-no OFF por omissao)
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
 IF DB_ID(N'MoreRhythm_DM') IS NULL
     CREATE DATABASE MoreRhythm_DM;
 GO
@@ -62,7 +71,11 @@ CREATE TABLE dbo.Dim_Cliente (
     Versao_Atual             bit           NOT NULL CONSTRAINT DF_Dim_Cliente_Atual DEFAULT (1),
     Data_Criacao_Origem      datetime2(0)  NOT NULL,
     Data_Atualizacao_Origem  datetime2(0)  NOT NULL,
+    Hash_SCD1                varbinary(32) NOT NULL,     -- hash dos atributos SCD1
+    Hash_SCD2                varbinary(32) NOT NULL,     -- hash dos atributos SCD2
     CONSTRAINT PK_Dim_Cliente PRIMARY KEY CLUSTERED (SK_Cliente),
+    CONSTRAINT CK_Dim_Cliente_Vigencia CHECK (Data_Fim >= Data_Inicio AND
+        ((Versao_Atual = 1 AND Data_Fim = '9999-12-31') OR (Versao_Atual = 0 AND Data_Fim < '9999-12-31'))),
     CONSTRAINT UQ_Dim_Cliente_Versao UNIQUE (BK_Cliente, Data_Inicio)
 );
 GO
@@ -84,7 +97,11 @@ CREATE TABLE dbo.Dim_Produto (
     Versao_Atual             bit           NOT NULL CONSTRAINT DF_Dim_Produto_Atual DEFAULT (1),
     Data_Criacao_Origem      datetime2(0)  NOT NULL,
     Data_Atualizacao_Origem  datetime2(0)  NOT NULL,
+    Hash_SCD1                varbinary(32) NOT NULL,     -- hash dos atributos SCD1
+    Hash_SCD2                varbinary(32) NOT NULL,     -- hash dos atributos SCD2
     CONSTRAINT PK_Dim_Produto PRIMARY KEY CLUSTERED (SK_Produto),
+    CONSTRAINT CK_Dim_Produto_Vigencia CHECK (Data_Fim >= Data_Inicio AND
+        ((Versao_Atual = 1 AND Data_Fim = '9999-12-31') OR (Versao_Atual = 0 AND Data_Fim < '9999-12-31'))),
     CONSTRAINT UQ_Dim_Produto_Versao UNIQUE (BK_Produto, Data_Inicio)
 );
 GO
@@ -112,7 +129,11 @@ CREATE TABLE dbo.Dim_Fornecedor (
     Versao_Atual             bit           NOT NULL CONSTRAINT DF_Dim_Fornecedor_Atual DEFAULT (1),
     Data_Criacao_Origem      datetime2(0)  NOT NULL,
     Data_Atualizacao_Origem  datetime2(0)  NOT NULL,
+    Hash_SCD1                varbinary(32) NOT NULL,     -- hash dos atributos SCD1
+    Hash_SCD2                varbinary(32) NOT NULL,     -- hash dos atributos SCD2
     CONSTRAINT PK_Dim_Fornecedor PRIMARY KEY CLUSTERED (SK_Fornecedor),
+    CONSTRAINT CK_Dim_Fornecedor_Vigencia CHECK (Data_Fim >= Data_Inicio AND
+        ((Versao_Atual = 1 AND Data_Fim = '9999-12-31') OR (Versao_Atual = 0 AND Data_Fim < '9999-12-31'))),
     CONSTRAINT UQ_Dim_Fornecedor_Versao UNIQUE (BK_Fornecedor, Data_Inicio)
 );
 GO
@@ -133,7 +154,11 @@ CREATE TABLE dbo.Dim_Funcionario (
     Versao_Atual             bit           NOT NULL CONSTRAINT DF_Dim_Funcionario_Atual DEFAULT (1),
     Data_Criacao_Origem      datetime2(0)  NOT NULL,
     Data_Atualizacao_Origem  datetime2(0)  NOT NULL,
+    Hash_SCD1                varbinary(32) NOT NULL,     -- hash dos atributos SCD1
+    Hash_SCD2                varbinary(32) NOT NULL,     -- hash dos atributos SCD2
     CONSTRAINT PK_Dim_Funcionario PRIMARY KEY CLUSTERED (SK_Funcionario),
+    CONSTRAINT CK_Dim_Funcionario_Vigencia CHECK (Data_Fim >= Data_Inicio AND
+        ((Versao_Atual = 1 AND Data_Fim = '9999-12-31') OR (Versao_Atual = 0 AND Data_Fim < '9999-12-31'))),
     CONSTRAINT UQ_Dim_Funcionario_Versao UNIQUE (BK_Funcionario, Data_Inicio)
 );
 GO
@@ -183,7 +208,8 @@ CREATE TABLE dbo.Fact_Vendas (
     Frete_Alocado_EUR        decimal(19,6) NOT NULL,
     Data_Criacao_Origem      datetime2(0)  NOT NULL,
     Data_Atualizacao_Origem  datetime2(0)  NOT NULL,
-    ID_Lote_ETL              int           NOT NULL,
+    ID_Lote_ETL              bigint        NOT NULL,     -- stg_load_control.load_id
+    Hash_Linha               varbinary(32) NOT NULL,     -- stg raw_row_hash (idempotencia: mesma linha nao se reaplica)
     CONSTRAINT PK_Fact_Vendas PRIMARY KEY CLUSTERED (SK_Venda),
     CONSTRAINT UQ_Fact_Vendas_Linha UNIQUE (BK_Linha_Fatura),
     CONSTRAINT FK_Fact_Data_Fatura     FOREIGN KEY (SK_Data_Fatura)     REFERENCES dbo.Dim_Data (SK_Data),
@@ -192,7 +218,11 @@ CREATE TABLE dbo.Fact_Vendas (
     CONSTRAINT FK_Fact_Produto         FOREIGN KEY (SK_Produto)         REFERENCES dbo.Dim_Produto (SK_Produto),
     CONSTRAINT FK_Fact_Fornecedor      FOREIGN KEY (SK_Fornecedor)      REFERENCES dbo.Dim_Fornecedor (SK_Fornecedor),
     CONSTRAINT FK_Fact_Funcionario     FOREIGN KEY (SK_Funcionario)     REFERENCES dbo.Dim_Funcionario (SK_Funcionario),
-    CONSTRAINT FK_Fact_Moeda           FOREIGN KEY (SK_Moeda)           REFERENCES dbo.Dim_Moeda (SK_Moeda)
+    CONSTRAINT FK_Fact_Moeda           FOREIGN KEY (SK_Moeda)           REFERENCES dbo.Dim_Moeda (SK_Moeda),
+    -- sem taxa de cambio no dia da fatura nao ha carga (regra 7 da Fase 1)
+    CONSTRAINT FK_Fact_Taxa_Cambio     FOREIGN KEY (SK_Data_Fatura, SK_Moeda) REFERENCES dbo.Dim_Taxa_Cambio (SK_Data, SK_Moeda),
+    CONSTRAINT CK_Fact_Taxa_Positiva   CHECK (Taxa_Cambio > 0),
+    CONSTRAINT CK_Fact_Fatura_Dia      CHECK (SK_Data_Fatura <> -1)
 );
 GO
 
@@ -203,11 +233,11 @@ CREATE NONCLUSTERED INDEX IX_Fact_Produto     ON dbo.Fact_Vendas (SK_Produto);
 CREATE NONCLUSTERED INDEX IX_Fact_Fornecedor  ON dbo.Fact_Vendas (SK_Fornecedor);
 CREATE NONCLUSTERED INDEX IX_Fact_Funcionario ON dbo.Fact_Vendas (SK_Funcionario);
 CREATE NONCLUSTERED INDEX IX_Fact_Numero_Fatura ON dbo.Fact_Vendas (Numero_Fatura);
--- Pesquisa da versao vigente na carga (SCD2)
-CREATE NONCLUSTERED INDEX IX_Dim_Cliente_Atual     ON dbo.Dim_Cliente     (BK_Cliente)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
-CREATE NONCLUSTERED INDEX IX_Dim_Produto_Atual     ON dbo.Dim_Produto     (BK_Produto)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
-CREATE NONCLUSTERED INDEX IX_Dim_Fornecedor_Atual  ON dbo.Dim_Fornecedor  (BK_Fornecedor)  INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
-CREATE NONCLUSTERED INDEX IX_Dim_Funcionario_Atual ON dbo.Dim_Funcionario (BK_Funcionario) INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
+-- Pesquisa da versao vigente na carga (SCD2); UNIQUE garante uma so versao corrente por BK
+CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Cliente_Atual     ON dbo.Dim_Cliente     (BK_Cliente)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
+CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Produto_Atual     ON dbo.Dim_Produto     (BK_Produto)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
+CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Fornecedor_Atual  ON dbo.Dim_Fornecedor  (BK_Fornecedor)  INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
+CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Funcionario_Atual ON dbo.Dim_Funcionario (BK_Funcionario) INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
 GO
 
 /*------------------- MEMBROS "DESCONHECIDO" (SK = -1) ----------------------*/
@@ -218,31 +248,35 @@ VALUES (-1, '1900-01-01', 1, 1, 1, 'Sem data', 0, 0, 1, 1900, 1, 'Sem data', 190
 
 SET IDENTITY_INSERT dbo.Dim_Cliente ON;
 INSERT INTO dbo.Dim_Cliente (SK_Cliente, BK_Cliente, Nome, NIF, Cidade, Zona, Pais, Tipo_Cliente, Segmento,
-                             Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem)
+                             Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem,
+                             Hash_SCD1, Hash_SCD2)
 VALUES (-1, -1, N'Desconhecido', 'N/D', N'Desconhecida', N'Desconhecida', N'Desconhecido', N'Desconhecido', N'Desconhecido',
-        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01');
+        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01', 0x00, 0x00);
 SET IDENTITY_INSERT dbo.Dim_Cliente OFF;
 
 SET IDENTITY_INSERT dbo.Dim_Produto ON;
 INSERT INTO dbo.Dim_Produto (SK_Produto, BK_Produto, Designacao, BK_Familia, Familia, BK_Categoria, Categoria,
-                             Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem)
+                             Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem,
+                             Hash_SCD1, Hash_SCD2)
 VALUES (-1, 'N/D', N'Desconhecido', 'N/D', N'Desconhecida', -1, N'Desconhecida',
-        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01');
+        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01', 0x00, 0x00);
 SET IDENTITY_INSERT dbo.Dim_Produto OFF;
 
 SET IDENTITY_INSERT dbo.Dim_Fornecedor ON;
 INSERT INTO dbo.Dim_Fornecedor (SK_Fornecedor, BK_Fornecedor, Nome, NIF, Tipo_Fornecedor, Cidade, Zona,
-                                Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem)
+                                Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem,
+                             Hash_SCD1, Hash_SCD2)
 -- SK -1 = produtos sem fornecedor na origem (products.supplyer NULL)
 VALUES (-1, -1, N'Sem fornecedor', 'N/D', N'Desconhecido', N'Desconhecida', N'Zona desconhecida',
-        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01');
+        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01', 0x00, 0x00);
 SET IDENTITY_INSERT dbo.Dim_Fornecedor OFF;
 
 SET IDENTITY_INSERT dbo.Dim_Funcionario ON;
 INSERT INTO dbo.Dim_Funcionario (SK_Funcionario, BK_Funcionario, Codigo, Nome, Email, Grupo, Departamento,
-                                 Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem)
+                                 Data_Inicio, Data_Fim, Versao_Atual, Data_Criacao_Origem, Data_Atualizacao_Origem,
+                             Hash_SCD1, Hash_SCD2)
 VALUES (-1, -1, 'N/D', N'Desconhecido', 'N/D', N'Desconhecido', N'Desconhecido',
-        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01');
+        '1900-01-01', '9999-12-31', 1, '1900-01-01', '1900-01-01', 0x00, 0x00);
 SET IDENTITY_INSERT dbo.Dim_Funcionario OFF;
 GO
 
