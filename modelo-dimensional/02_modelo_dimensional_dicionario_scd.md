@@ -54,7 +54,7 @@ erDiagram
 
 ## 3. Dicionário de dados
 
-Convenções: `SK_` = chave substituta (surrogate key, `int IDENTITY`); `BK_` = chave de negócio vinda da origem. Cada dimensão tem um membro **"Desconhecido"** com SK = −1. **PK** = chave primária, **FK** = chave estrangeira, **N** = nulável. Os tipos são de SQL Server.
+Convenções: `Hash_SCD1` / `Hash_SCD2` (`varbinary(32)`, não nulos, nas quatro dimensões com SCD) guardam o SHA2-256 das colunas SCD1 e SCD2 normalizadas, para detetar alterações na carga sem comparar coluna a coluna; `SK_` = chave substituta (surrogate key, `int IDENTITY`); `BK_` = chave de negócio vinda da origem. Cada dimensão tem um membro **"Desconhecido"** com SK = −1. **PK** = chave primária, **FK** = chave estrangeira, **N** = nulável. Os tipos são de SQL Server.
 
 ### 3.1 `Fact_Vendas`
 
@@ -83,9 +83,12 @@ Convenções: `SK_` = chave substituta (surrogate key, `int IDENTITY`); `BK_` = 
 | Frete_Alocado_EUR | decimal(19,6) | — | N | `Frete_Alocado × Taxa_Cambio` | calculado |
 | Data_Criacao_Origem | datetime2(0) | — | N | `create_date + create_time` da linha | `invoices_lines.create_*` |
 | Data_Atualizacao_Origem | datetime2(0) | — | N | `last_update_date + last_update_time` (incremental) | `invoices_lines.last_update_*` |
-| ID_Lote_ETL | int | — | N | Execução do ETL que inseriu/atualizou | ETL |
+| ID_Lote_ETL | bigint | — | N | Execução do ETL que inseriu/atualizou (`stg_load_control.load_id`) | ETL |
+| Hash_Linha | varbinary(32) | — | N | `raw_row_hash` da linha na Staging; a mesma linha com o mesmo hash não é reaplicada (idempotência) | Staging |
 
 `SK_Data_Pagamento` usa SK −1 ("sem data") quando a fatura ainda não foi paga.
+
+**Restrições físicas adicionais** (ver [04_ddl_data_mart.sql](04_ddl_data_mart.sql)): FK composta `(SK_Data_Fatura, SK_Moeda) → Dim_Taxa_Cambio`, que impede carregar uma linha sem taxa de câmbio no dia da fatura (regra 7 da Fase 1); `CK_Fact_Taxa_Positiva` (`Taxa_Cambio > 0`); `CK_Fact_Fatura_Dia` (`SK_Data_Fatura <> −1`, a data da fatura é obrigatória).
 
 ### 3.2 `Dim_Data` (papéis: Data da Fatura, Data de Pagamento)
 
@@ -254,13 +257,15 @@ Origem: `employees`.
 
 ## 5. Estratégias SCD — resumo e justificação
 
-A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (hash das colunas SCD2) nos registos cuja `last_update` seja mais recente que a última carga.
+A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (`Hash_SCD1` / `Hash_SCD2`) nos registos cuja `last_update` seja mais recente que a última carga.
 
 | Tipo | Quando se usa | Efeito |
 |---|---|---|
 | **SCD 1** (sobrescreve) | Correções e atributos que não explicam resultados passados: nome, NIF, email, telefone, morada, contactos, prazos de pagamento, designação do produto | Atualiza a versão atual; sem histórico |
 | **SCD 2** (nova versão) | Atributos que **classificam** o facto e cuja mudança alteraria relatórios passados: zona, cidade, tipo, segmento, vendedor (cliente); família, categoria, classificação, taxa de IVA (produto); zona, cidade, tipo (fornecedor); grupo, departamento, chefe (funcionário) | Fecha a versão atual (`Data_Fim`, `Versao_Atual = 0`) e cria outra |
 | Sem SCD | `Dim_Data`, `Dim_Taxa_Cambio` | Imutáveis |
+
+**Convenção de vigência (garantida por restrições físicas):** a 1.ª versão de cada BK começa em `1900-01-01`, para que factos históricos encontrem versão; ao abrir uma nova versão, a anterior fecha com `Data_Fim = Data_Inicio_nova − 1 dia` (intervalos sem sobreposição, pesquisa por `BETWEEN`). `CK_Dim_*_Vigencia` impõe `Data_Fim ≥ Data_Inicio` e `Versao_Atual = 1 ⇔ Data_Fim = 9999-12-31`; o índice único filtrado `IX_Dim_*_Atual` impede duas versões correntes do mesmo BK.
 
 **Justificações-chave:**
 
