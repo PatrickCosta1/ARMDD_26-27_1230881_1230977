@@ -64,7 +64,7 @@ Convenções: `Hash_SCD1` / `Hash_SCD2` (`varbinary(32)`, não nulos, nas quatro
 |---|---|---|---|---|---|
 | SK_Venda | bigint IDENTITY | PK | N | Chave substituta da linha de factos | — |
 | SK_Data_Fatura | int | FK → Dim_Data | N | Data da fatura (papel principal) | `invoices.invoice_date` |
-| SK_Data_Pagamento | int | FK → Dim_Data | N | Data de pagamento (papel secundário) | `invoices.payment_date` |
+| SK_Data_Pagamento | int | FK → Dim_Data | N | Data de pagamento (papel secundário). Na origem `payment_date` é sempre preenchida (03/02 a 31/12/2025, nunca anterior à fatura): pode ser data de vencimento, a confirmar com o negócio | `invoices.payment_date` |
 | SK_Cliente | int | FK → Dim_Cliente | N | Versão do cliente à data da venda | `invoices.customer` |
 | SK_Produto | int | FK → Dim_Produto | N | Versão do produto à data da venda | `invoices_lines.product` |
 | SK_Fornecedor | int | FK → Dim_Fornecedor | N | Fornecedor do produto vendido; **−1 ("Sem fornecedor")** quando `products.supplyer` é nulo (12 produtos na amostra) | `products.supplyer` |
@@ -128,7 +128,7 @@ Origem: `customers` + `zones`. **Um cliente de origem = uma chave de negócio**;
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
 | SK_Cliente | int IDENTITY | PK | N | Chave substituta | — |
-| BK_Cliente | numeric(9,0) | — | N | `customers.number` do registo sobrevivente | — |
+| BK_Cliente | numeric(10,0) | — | N | `customers.number` | — |
 | Nome | nvarchar(55) | — | N | Nome | 1 |
 | NIF | varchar(20) | — | N | `taxpayer_number` (chave de deteção de duplicados). Em falta/vazio ou `000000000` → `N/D` (1 cliente sem NIF e 1 com `000000000` na amostra) | 1 |
 | Contacto | nvarchar(30) | — | **S** | Pessoa de contacto | 1 |
@@ -188,7 +188,7 @@ Origem: `suplliers` + `zones`. O fornecedor associa-se à linha **via produto** 
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
 | SK_Fornecedor | int IDENTITY | PK | N | Chave substituta | — |
-| BK_Fornecedor | numeric(9,0) | — | N | `suplliers.number` | — |
+| BK_Fornecedor | numeric(10,0) | — | N | `suplliers.number` | — |
 | Nome | nvarchar(55) | — | N | Nome | 1 |
 | NIF | varchar(20) | — | N | `taxpayer_number` | 1 |
 | Tipo_Fornecedor | nvarchar(20) | — | N | Material / Serviços | **2** |
@@ -210,14 +210,14 @@ Origem: `employees`.
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
 | SK_Funcionario | int IDENTITY | PK | N | Chave substituta | — |
-| BK_Funcionario | numeric(5,0) | — | N | `employees.number` | — |
+| BK_Funcionario | numeric(6,0) | — | N | `employees.number` | — |
 | Codigo | varchar(20) | — | N | `code` (login) | 1 |
 | Nome | nvarchar(30) | — | N | Nome | 1 |
 | Email | varchar(100) | — | N | Email | 1 |
 | Grupo | nvarchar(20) | — | N | Vendedor, Administrativo, Administrador | **2** |
 | Departamento | nvarchar(20) | — | N | Armazenagem, Administrativo, Direcção | **2** |
-| BK_Chefe | numeric(5,0) | — | **S** | Número do chefe (vazio para a direção) | **2** |
-| Nome_Chefe | nvarchar(30) | — | **S** | Nome do chefe | **2** |
+| BK_Chefe | numeric(6,0) | — | **S** | Número do chefe (vazio para a direção) | **2** |
+| Nome_Chefe | nvarchar(30) | — | **S** | Nome do chefe; o SCD2 é acionado pelo `BK_Chefe`, e um novo nome do mesmo chefe atualiza todas as versões | **2** (por BK) |
 | Data_Inicio / Data_Fim / Versao_Atual | date / date / bit | — | N | Controlo SCD2 | — |
 
 **Hierarquias:** Departamento > Grupo > Funcionário, e **Chefe > Funcionário** (hierarquia irregular, pai-filho, achatada em 2 níveis).
@@ -280,11 +280,11 @@ A origem regista data/hora de criação e de cada alteração (`create_*`, `last
 
 O data profiling do Patrick (`data-profiling/resultados.md`, §5) classifica os clientes 10 e 18 como **potenciais duplicados** (mesmo NIF normalizado `502323434` e mesmo nome normalizado *EIRA E BEIRA, LDA*; cada um tem 1 fatura, de 90,36 e 471,88). A proposta do modelo é:
 
-- Um **mapa** `Map_Cliente (BK_Origem → BK_Sobrevivente)` é criado na Staging, mantendo sempre os identificadores originais (regra R01 do Patrick: não eliminar nenhum cliente de origem).
+- Os grupos de duplicados ficam em `stg_customer_duplicate_groups` (Staging), mantendo sempre os identificadores originais (regra R01: não eliminar nenhum cliente de origem). Um sobrevivente só existe depois de revisão (`survivor_customer_number`).
 - A `Dim_Cliente` mantém ambos enquanto o estado for `PENDING_REVIEW`; as faturas apontam para o respetivo cliente de origem. Só após aprovação explícita será criado um mapa para um sobrevivente, sem perder as duas linhas de factos.
 - **Duplicados exatos:** o mesmo NIF (válido, diferente de `N/D` e `000000000`) **e** o mesmo nome normalizado (maiúsculas, acentos, espaços e pontuação). Casos 10 e 18.
 - **Duplicados aproximados:** mesmo NIF com nome/morada quase iguais, ou nome muito semelhante com a mesma morada ou email. Regras e limiares a definir com o Patrick; os casos duvidosos **não** são fundidos automaticamente e vão para revisão.
-- **Critério do sobrevivente:** o registo com atualização mais recente (`last_update`); em caso de empate, o de menor número.
+- **Sobrevivente:** não há critério automático (decisão fechada n.º 4). Quando um grupo for `CONFIRMED`, o revisor indica `survivor_customer_number`; as faturas dos restantes passam a apontar para o sobrevivente numa nova carga.
 
 ## 6.1 Tratamento de dados em falta e inválidos (alinhado com as regras R01–R10 do Patrick)
 

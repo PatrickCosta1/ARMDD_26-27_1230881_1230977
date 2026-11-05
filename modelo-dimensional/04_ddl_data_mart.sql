@@ -50,7 +50,7 @@ GO
 /*----------------------------- DIMENSAO CLIENTE ----------------------------*/
 CREATE TABLE dbo.Dim_Cliente (
     SK_Cliente               int           IDENTITY(1,1) NOT NULL,
-    BK_Cliente               numeric(9,0)  NOT NULL,     -- customers.number (sobrevivente)
+    BK_Cliente               numeric(10,0) NOT NULL,     -- customers.number
     Nome                     nvarchar(55)  NOT NULL,     -- SCD1
     NIF                      varchar(20)   NOT NULL,     -- SCD1 ('N/D' se em falta, vazio ou 000000000)
     Contacto                 nvarchar(30)  NULL,         -- SCD1
@@ -109,7 +109,7 @@ GO
 /*---------------------------- DIMENSAO FORNECEDOR --------------------------*/
 CREATE TABLE dbo.Dim_Fornecedor (
     SK_Fornecedor            int           IDENTITY(1,1) NOT NULL,
-    BK_Fornecedor            numeric(9,0)  NOT NULL,     -- suplliers.number
+    BK_Fornecedor            numeric(10,0) NOT NULL,     -- suplliers.number
     Nome                     nvarchar(55)  NOT NULL,     -- SCD1
     NIF                      varchar(20)   NOT NULL,     -- SCD1
     Tipo_Fornecedor          nvarchar(20)  NOT NULL,     -- SCD2
@@ -141,13 +141,13 @@ GO
 /*---------------------------- DIMENSAO FUNCIONARIO -------------------------*/
 CREATE TABLE dbo.Dim_Funcionario (
     SK_Funcionario           int           IDENTITY(1,1) NOT NULL,
-    BK_Funcionario           numeric(5,0)  NOT NULL,     -- employees.number
+    BK_Funcionario           numeric(6,0)  NOT NULL,     -- employees.number
     Codigo                   varchar(20)   NOT NULL,     -- SCD1
     Nome                     nvarchar(30)  NOT NULL,     -- SCD1
     Email                    varchar(100)  NOT NULL,     -- SCD1
     Grupo                    nvarchar(20)  NOT NULL,     -- SCD2
     Departamento             nvarchar(20)  NOT NULL,     -- SCD2
-    BK_Chefe                 numeric(5,0)  NULL,         -- SCD2
+    BK_Chefe                 numeric(6,0)  NULL,         -- SCD2
     Nome_Chefe               nvarchar(30)  NULL,         -- SCD2
     Data_Inicio              date          NOT NULL,
     Data_Fim                 date          NOT NULL CONSTRAINT DF_Dim_Funcionario_Fim DEFAULT ('9999-12-31'),
