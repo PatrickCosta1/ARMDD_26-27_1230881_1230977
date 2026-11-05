@@ -1,6 +1,6 @@
 # Mapeamento Staging → Data Mart (ao nível do atributo)
 
-> Responsável: Leonor (A), em conjunto com Patrick (B) · Complementa [source-to-staging.md](source-to-staging.md) §9.3 e [transformacoes-limpeza.md](transformacoes-limpeza.md) · Modelo: [02_modelo_dimensional_dicionario_scd.md](../modelo-dimensional/02_modelo_dimensional_dicionario_scd.md) · DDL: [04_ddl_data_mart.sql](../modelo-dimensional/04_ddl_data_mart.sql)
+> Responsáveis: Leonor (A) e Patrick (B) · Complementa [source-to-staging.md](source-to-staging.md) §9.3 e [transformacoes-limpeza.md](transformacoes-limpeza.md) · Modelo: [02_modelo_dimensional_dicionario_scd.md](../modelo-dimensional/02_modelo_dimensional_dicionario_scd.md) · DDL: [04_ddl_data_mart.sql](../modelo-dimensional/04_ddl_data_mart.sql)
 
 O enunciado exige, para cada atributo, a origem, as operações de transformação e limpeza e a estratégia SCD. Os tipos de origem foram confirmados na `MoreRhythm` (`INFORMATION_SCHEMA.COLUMNS`).
 
@@ -124,7 +124,7 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
    - **hashes iguais** → nada a fazer (repetir o lote não altera nada).
 4. As dimensões carregam **antes** dos factos.
 
-## 9. Colunas que a Staging tem de fornecer (verificação cruzada com o Patrick)
+## 9. Colunas que a Staging tem de fornecer (verificação cruzada)
 
 As tabelas tipadas `stg_<origem>` ainda não existem em [03_ddl_staging_area.sql](03_ddl_staging_area.sql). Para este mapeamento funcionar, têm de existir:
 
