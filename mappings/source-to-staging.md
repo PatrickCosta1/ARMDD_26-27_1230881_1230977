@@ -140,7 +140,7 @@ As 12 linhas de compras sem produto usam `R05`; as quatro linhas financeiras usa
 | Todas as colunas de `categories`, `customers`, `employees`, `families`, `invoices`, `invoices_lines`, `products`, `purchases`, `purchases_lines`, `stocks_movements`, `suplliers`, `zones` | Tipo, precisão e escala da origem | Cópia 1:1; `NULL` permanece `NULL`; espaços só são removidos numa coluna de comparação | Chave primária não nula; hash e metadados obrigatórios |
 | `customers.taxpayer_number`, nome, email e morada | Tipo da origem + colunas normalizadas | `normalised_*` apenas para comparação; vazio torna-se `NULL` na coluna transformada | R01 para colisões; não fundir sem aprovação |
 | `invoices_lines.quantity`, `unit_price`, `line_total` | `decimal(14,4)` / `decimal(19,6)` | Preservar sinal e precisão | R06 quando `line_total <> quantity * unit_price` |
-| `invoices.total_products` e linhas da fatura | `decimal(19,6)` | Calcular `line_sum` e `header_line_difference` | R07 quando `ABS(difference) > 0,01` |
+| `invoices.products_total` e linhas da fatura | `decimal(19,6)` | Calcular `line_sum` e `header_line_difference` | R07 quando `ABS(difference) > 0,01` |
 | `purchases_lines.product` | Tipo da origem | Nenhuma substituição | R05 quando nulo ou vazio |
 
 ### 9.3. Staging → Data Mart
