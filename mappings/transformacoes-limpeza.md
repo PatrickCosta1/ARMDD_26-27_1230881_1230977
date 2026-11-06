@@ -19,8 +19,8 @@ A identificação de uma anomalia não prova, por si só, que exista um erro de 
 
 | ID | Problema observado | Regra proposta | Tratamento previsto |
 |---|---|---|---|
-| R01 | Clientes 10 e 18 com número de contribuinte e nome normalizados iguais | Comparar o contribuinte normalizado e outros atributos de identificação, preservando os identificadores originais. | Classificar como potenciais duplicados. Não consolidar automaticamente nem eliminar qualquer cliente antes de definir uma regra determinística e preservar as referências às faturas. |
-| R02 | Email e telemóvel em falta em clientes | Distinguir atributos opcionais de atributos obrigatórios para cada análise. | Preservar os valores nulos. A ausência de contacto, por si só, não deve excluir uma venda do Data Mart, salvo se um requisito analítico justificado o exigir. |
+| R01 | Clientes duplicados, iguais ou aproximadamente iguais: pares 10 e 18, 8 e 22 e 5 e 26 | Comparar todos os pares por semelhança de nome, com atributos corroborantes (§4). Escolher o sobrevivente e registar o mapeamento origem → sobrevivente. | Consolidar cada grupo num único cliente na Staging; as faturas dos clientes absorvidos passam para o sobrevivente. Os identificadores originais ficam no mapeamento e a origem não é alterada. |
+| R02 | Email e telemóvel em falta; email com formato inválido (1 cliente, 2 funcionários); NIF não identificativo (vazio, só zeros) | Considerar ausente o valor vazio, só com espaços, ou que não cumpra o formato; distinguir atributos opcionais de obrigatórios. | Preservar o valor original; a coluna transformada fica `NULL`. A ausência de contacto, por si só, não exclui uma venda do Data Mart. Um NIF não identificativo não entra na deteção de duplicados. |
 | R03 | Zona em falta em clientes | Verificar o valor de origem e a existência de uma correspondência válida. | Não inferir uma zona. Preservar o valor em falta e definir, no modelo dimensional, o tratamento adequado para a zona desconhecida, se aplicável. |
 | R04 | Atributos de produto em falta | Validar designação, família, categoria, fornecedor, stock e preço de venda de acordo com a utilização analítica de cada atributo. | Preservar os valores originais e sinalizar os campos em falta. Não inventar valores comerciais nem rejeitar automaticamente todos os factos associados sem avaliar o impacto no modelo dimensional. |
 | R05 | 12 linhas de compra sem referência de produto | Identificar referências nulas ou vazias em `purchases_lines.product`. | Manter os registos na Staging Area, encaminhá-los para uma estrutura própria de registos com problemas de qualidade e excluí-los do Data Mart enquanto não for possível identificar o produto de forma fiável. Não atribuir um produto arbitrário. |
@@ -41,15 +41,45 @@ Os registos e atributos devem ser classificados de acordo com a natureza do prob
 
 A rejeição deve ser aplicada ao nível do registo e com base no impacto concreto. Um atributo opcional em falta não deve provocar a rejeição de toda a venda sem justificação. Inversamente, uma linha de compra sem produto não deve ser carregada como se o produto fosse conhecido.
 
-## 4. Normalização e potenciais duplicados
+## 4. Normalização e duplicados de clientes
 
-Antes de comparar campos textuais, podem ser aplicadas regras de normalização, tais como remoção de espaços exteriores e uniformização de maiúsculas/minúsculas. Para números de contribuinte, a comparação pode ignorar separadores de formatação, desde que o valor original seja preservado.
+O enunciado pede a eliminação das redundâncias «iguais ou aproximadamente iguais». A igualdade exata de contribuinte e nome só encontra um par (10 e 18); a comparação por semelhança encontra mais dois (8 e 22; 5 e 26). Os resultados estão em [`resultados.md`](../data-profiling/resultados.md), §5.
 
-Os clientes 10 e 18 apresentam o mesmo número de contribuinte normalizado (`502323434`), o mesmo nome normalizado (`EIRA E BEIRA, LDA`) e os mesmos principais atributos de identificação e contacto analisados. São, por isso, **potenciais duplicados**, não duplicados definitivamente confirmados.
+### 4.1. Normalização para comparação
 
-A consolidação exige uma regra explícita para escolher a referência canónica, mapear os identificadores alternativos e preservar as relações com as faturas. Os resultados do profiling indicam faturas associadas a ambos os clientes; os respetivos valores não podem ser eliminados nem agregados sem uma decisão fundamentada.
+A normalização aplica-se a cópias de comparação; os valores originais são preservados.
 
-Até essa decisão, ambos os registos devem ser preservados na Staging Area e a ambiguidade deve ser resolvida antes de carregar a dimensão Cliente.
+- **Nome:** maiúsculas, sem pontuação, sem as formas jurídicas `LDA` e `SA`, espaços repetidos reduzidos a um.
+- **Morada:** maiúsculas, sem pontuação, `R` inicial expandido para `RUA`.
+- **NIF:** só é considerado se tiver 9 dígitos e não for composto só por zeros.
+- **Email:** só é considerado se tiver formato válido (um `@`, um `.` depois, sem espaços).
+- **Telefone:** dígitos de `phone` e `mobile`, sem espaços nem prefixo `+`.
+
+### 4.2. Critério de deteção
+
+Para cada par de clientes calcula-se a semelhança do nome (1 menos a distância de Levenshtein dividida pelo comprimento da maior cadeia). Um par é duplicado quando:
+
+1. a semelhança do nome é pelo menos 0,80; e
+2. existem pelo menos dois atributos corroborantes entre: mesmo código postal; semelhança da morada pelo menos 0,80; mesmo telefone ou telemóvel; mesmo email válido; mesmo BBAN; NIF válidos com distância de Levenshtein não superior a 2.
+
+O nome sozinho não decide (os clientes internos 24 e 25 têm semelhança 0,85 sem corroboração e ficam distintos). O dígito de controlo do NIF não é usado, porque a maior parte dos contribuintes da amostra falha a verificação, incluindo os dos pares encontrados. Nenhum cliente pertence a mais de um par; um grupo com mais de dois membros seria formado por componentes ligados.
+
+O limiar 0,80 e o mínimo de duas corroborações foram validados sobre a amostra (sensibilidade em `resultados.md` §5.2). Na implementação em SSIS a deteção usa o componente *Fuzzy Grouping*, com o limiar de semelhança calibrado sobre os mesmos pares; o resultado esperado é o mesmo mapeamento.
+
+### 4.3. Sobrevivente e valores consolidados
+
+- **Sobrevivente:** o membro com a atualização mais recente (`last_update_date` e `last_update_time`); em caso de empate, o menor número de cliente. Resultado: 18 (grupo 10 e 18), 5 (grupo 5 e 26) e 8 (grupo 8 e 22).
+- **Atributos:** para cada atributo usa-se o valor do sobrevivente quando é válido; se for ausente ou inválido, usa-se o valor válido do membro absorvido. Assim, o grupo 5 e 26 fica com o email `coro@sapo.pt` do cliente 26 (o do cliente 5 é inválido) e o grupo 8 e 22 fica com o telefone do cliente 22.
+- **Divergências:** quando os dois valores são válidos e diferentes (NIF, nome, morada nos grupos 5 e 26 e 8 e 22), prevalece o do sobrevivente e a divergência fica registada em `review_note`. Os dados não permitem saber qual dos NIF está correto; o risco fica assumido e documentado.
+- **Chave de negócio no Data Mart:** o número do sobrevivente. As faturas de todos os membros do grupo são ligadas ao sobrevivente antes da carga de `Fact_Vendas`.
+
+### 4.4. Mapeamento e rastreabilidade
+
+`stg_customer_duplicate_groups` guarda, por cliente de origem, o grupo, o sobrevivente, o critério (semelhança e atributos corroborantes) e a nota de divergência. O mapeamento é recalculado em cada carga, antes da dimensão Cliente. Se uma carga futura detetar um novo duplicado, as faturas ainda não carregadas seguem o novo mapeamento e as já carregadas são reapontadas ao sobrevivente.
+
+### 4.5. Fornecedores
+
+Os fornecedores 8 e 14 têm o mesmo NIF mas localidade, zona, contactos e produtos diferentes; são tratados como estabelecimentos distintos da mesma entidade e não são consolidados (a zona do fornecedor é usada na análise 10).
 
 ## 5. Tratamento dos problemas financeiros
 
@@ -103,7 +133,7 @@ As regras desta especificação são aplicadas pela ordem seguinte:
 
 Ficam fechadas as seguintes decisões para a Fase 1:
 
-- **Clientes 10 e 18:** são potenciais duplicados, mas não existe confirmação de negócio. Não são consolidados nem eliminados automaticamente. Ambos permanecem na Staging e são carregados como clientes distintos, com `duplicate_group_id` comum e estado `PENDING_REVIEW`. Uma futura consolidação exige um mapa explícito entre as chaves de origem e o sobrevivente; até lá, as duas faturas mantêm o respetivo cliente de origem.
+- **Clientes duplicados:** os pares 10 e 18, 8 e 22 e 5 e 26 são consolidados no sobrevivente (§4), com mapeamento origem → sobrevivente em `stg_customer_duplicate_groups`. Os identificadores originais não se perdem; a origem não é alterada.
 - **Quantidades e preços negativos:** não são convertidos para valores absolutos nem reinterpretados como devoluções. As quatro linhas financeiras e as respetivas faturas são `REJEITADO` até existir confirmação da semântica.
 - **Divergências de cabeçalho:** as duas faturas com diferença entre o total de produtos e a soma das linhas são rejeitadas integralmente. A rejeição ao nível da fatura preserva a reconciliação do frete alocado.
 - **Produto desconhecido em compras:** as 12 linhas ficam em `stg_rejections` com os valores originais; não entram no Data Mart de vendas.
