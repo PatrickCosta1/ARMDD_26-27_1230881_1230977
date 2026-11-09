@@ -22,7 +22,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Nome `nvarchar(55)` | `customers.name` | `limpa`; vazio → rejeitar (identificação) | 1 |
 | NIF `varchar(20)` | `customers.taxpayer_number` | Remover espaços e separadores; vazio ou só zeros → `N/D` (R02). Não entra na deteção de duplicados se `N/D` | 1 |
 | Contacto `nvarchar(30)` | `customers.contact` | `limpa` | 1 |
-| Email `varchar(45)` | `customers.email` | `limpa`; `NULL` se vazio | 1 |
+| Email `varchar(45)` | `customers.email` | `limpa`; `NULL` se vazio ou com formato inválido (R02) | 1 |
 | Telefone `varchar(60)` | `customers.phone` | `limpa` | 1 |
 | Telemovel `varchar(45)` | `customers.mobile` | `limpa` | 1 |
 | Morada `nvarchar(55)` | `customers.address` | `limpa` | 1 |
@@ -64,7 +64,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Nacionalidade `nvarchar(20)` | `suplliers.nationality` | `limpa`; vazio → `NULL` | 1 |
 | Cidade `nvarchar(43)` | `suplliers.city` | `limpa`; vazio → `Desconhecida` | **2** |
 | Zona `nvarchar(50)` | `zones.zone` via `suplliers.zone` | `NULL` → `Zona desconhecida` | **2** |
-| Morada, Codigo_Postal, Contacto, Cargo_Contacto, Email, Telefone, Telemovel | `address`, `zip_code`, `contact`, `contact_position`, `email`, `phone`, `mobile` | `limpa`; vazio → `NULL` | 1 |
+| Morada, Codigo_Postal, Contacto, Cargo_Contacto, Email, Telefone, Telemovel | `address`, `zip_code`, `contact`, `contact_position`, `email`, `phone`, `mobile` | `limpa`; vazio → `NULL` (também o email com formato inválido) | 1 |
 | Dias_Pagamento `smallint` | `suplliers.days_pay_invoices` | Cópia | 1 |
 
 Membro técnico **SK −1 "Sem fornecedor"** para os 12 produtos com `products.supplyer` nulo.
@@ -76,7 +76,7 @@ Membro técnico **SK −1 "Sem fornecedor"** para os 12 produtos com `products.s
 | BK_Funcionario `numeric(6,0)` | `employees.number` | Cópia | — |
 | Codigo `varchar(20)` | `employees.code` | `limpa` | 1 |
 | Nome `nvarchar(30)` | `employees.name` | `limpa` | 1 |
-| Email `varchar(100)` | `employees.email` | `limpa` | 1 |
+| Email `varchar(100)` | `employees.email` | `limpa`; vazio ou com formato inválido → `NULL` (R02: dois `@` nos funcionários 2 e 5); o original fica na Staging | 1 |
 | Grupo `nvarchar(20)` | `employees.[group]` | `limpa` (nome reservado: escrever entre parênteses retos) | **2** |
 | Departamento `nvarchar(20)` | `employees.departament` (grafia da origem) | `limpa` | **2** |
 | BK_Chefe `numeric(6,0)` | `employees.chief` | `NULL` para a direção (2 funcionários) | **2** |
@@ -116,7 +116,7 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 
 ## 8. Algoritmo de carga das dimensões (por lote)
 
-1. Ler da Staging os registos `VALID`/`CORRIGIDO` do lote com `last_update` posterior à última carga bem-sucedida (ou todos, se for a 1.ª carga).
+1. Ler da Staging os registos `VALID`/`CORRIGIDO` do lote. Nas tabelas com auditoria fiável (clientes, funcionários, famílias, faturas e linhas) só os que têm `last_update` posterior à última carga bem-sucedida; em zonas, categorias, produtos e fornecedores lê-se tudo e a alteração deteta-se por *hash* (ver §9). Na 1.ª carga leem-se todos.
 2. Calcular `Hash_SCD1` e `Hash_SCD2` sobre os valores transformados.
 3. Em `Dim_Cliente`, partir só dos sobreviventes do mapa `stg_customer_duplicate_groups` e consolidar os atributos do grupo. Procurar a versão corrente por BK (`Versao_Atual = 1`):
    - **não existe** → inserir versão com `Data_Inicio = 1900-01-01`;
@@ -137,6 +137,6 @@ A Staging tem 15 tabelas (12 `stg_<origem>` e 3 de apoio: `stg_load_control`, `s
 | Marca de que a classificação do produto veio do *fallback* da família | `stg_products.classification_fallback`; o Data Mart não tem coluna para isso |
 | Mapa origem → sobrevivente dos clientes duplicados | `stg_customer_duplicate_groups` (`source_customer_number`, `survivor_customer_number`, `review_status`) |
 | Registos rejeitados, com os valores originais | `stg_rejections` (JSON só aqui). R06, R07 e R11 rejeitam a fatura inteira |
-| Marca para a carga incremental | `MAX(last_update)` das tabelas `stg_`; `stg_load_control` não tem `source_table` |
+| Marca para a carga incremental | `MAX(last_update)` de cada tabela `stg_` (não o relógio da extração), só nas tabelas com auditoria fiável (clientes, funcionários, famílias, faturas e linhas). Produtos e fornecedores têm `last_update` anterior à criação em 8 de 67 e 8 de 14 registos, e zonas e categorias não têm auditoria: nestas lê-se tudo e compara-se o `raw_row_hash`. `stg_load_control` não tem `source_table` |
 
 Só entram em `Fact_Vendas` faturas sem R06, R07 e R11 (7 das 37 faturas ficam de fora: 4 989,88 de 49 341,33, ou 10,1 % do valor).

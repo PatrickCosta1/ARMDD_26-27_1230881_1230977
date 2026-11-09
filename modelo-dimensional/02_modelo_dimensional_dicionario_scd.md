@@ -133,7 +133,7 @@ Origem: `customers` + `zones` + `stg_customer_duplicate_groups`. **Uma linha por
 | Nome | nvarchar(55) | — | N | Nome | 1 |
 | NIF | varchar(20) | — | N | `taxpayer_number` (chave de deteção de duplicados). Vazio ou só zeros → `N/D` (4 clientes na amostra: um em branco, `0`, `00` e `000000000`) | 1 |
 | Contacto | nvarchar(30) | — | **S** | Pessoa de contacto | 1 |
-| Email | varchar(45) | — | **S** | Email | 1 |
+| Email | varchar(45) | — | **S** | Email; vazio ou com formato inválido (por exemplo `coro.sapo.pt`) → `NULL` (R02); o valor original fica na Staging | 1 |
 | Telefone | varchar(60) | — | **S** | `phone` | 1 |
 | Telemovel | varchar(45) | — | **S** | `mobile` | 1 |
 | Morada | nvarchar(55) | — | **S** | Morada | 1 |
@@ -214,7 +214,7 @@ Origem: `employees`.
 | BK_Funcionario | numeric(6,0) | — | N | `employees.number` | — |
 | Codigo | varchar(20) | — | N | `code` (login) | 1 |
 | Nome | nvarchar(30) | — | N | Nome | 1 |
-| Email | varchar(100) | — | N | Email | 1 |
+| Email | varchar(100) | — | **S** | Email; vazio ou com formato inválido (por exemplo dois `@`, nos funcionários 2 e 5) → `NULL` (R02), como nos clientes e fornecedores; o valor original fica na Staging | 1 |
 | Grupo | nvarchar(20) | — | N | Vendedor, Administrativo, Administrador | **2** |
 | Departamento | nvarchar(20) | — | N | Armazenagem, Administrativo, Direcção | **2** |
 | BK_Chefe | numeric(6,0) | — | **S** | Número do chefe (vazio para a direção) | **2** |
@@ -258,7 +258,7 @@ Origem: `employees`.
 
 ## 5. Estratégias SCD — resumo e justificação
 
-A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (`Hash_SCD1` / `Hash_SCD2`) nos registos cuja `last_update` seja mais recente que a última carga.
+A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (`Hash_SCD1` / `Hash_SCD2`) e, nas tabelas com datas de auditoria fiáveis (clientes, funcionários, famílias, faturas e linhas), só nos registos cuja `last_update` seja mais recente que a última carga. Em produtos e fornecedores, onde 8 de 67 e 8 de 14 registos têm `last_update` anterior à criação, e em zonas e categorias, que não têm auditoria, lê-se tudo e a alteração deteta-se pelo *hash*.
 
 | Tipo | Quando se usa | Efeito |
 |---|---|---|
@@ -297,7 +297,7 @@ Princípio comum: **atributo descritivo em falta → membro "Desconhecido" (vis�
 | 12 produtos sem fornecedor (R04) | Fornecedor é descritivo | `SK_Fornecedor = −1` ("Sem fornecedor"); a venda é carregada |
 | 2 clientes sem zona (R03) | Zona não se infere | `Zona = 'Zona desconhecida'` (e `Pais = 'Desconhecido'`) |
 | 4 clientes com NIF não identificativo: em branco, `0`, `00`, `000000000` (R02) | NIF não identifica | `NIF = 'N/D'`; fora da deteção de duplicados |
-| Email/telemóvel em falta (R02) | Atributos opcionais | Ficam `NULL` |
+| Email ou telemóvel em falta, ou email com formato inválido (R02: 1 cliente e 2 funcionários) | Atributos opcionais | Ficam `NULL`; o valor original fica na Staging |
 | 2 produtos sem designação/família/categoria (R04) | Descritivos | Carregados em `Dim_Produto` com "Desconhecida"; sem vendas na amostra |
 | 4 linhas de fatura com `line_total ≠ quantidade × preço` (R06) | Sinal incerto | **Rejeitar a fatura** enquanto a regra de sinal não for confirmada (ver abaixo) |
 | 2 faturas com cabeçalho ≠ soma das linhas (R07) | Valor correto desconhecido | **Rejeitar a fatura** |
