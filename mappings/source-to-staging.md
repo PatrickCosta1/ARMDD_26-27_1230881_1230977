@@ -87,11 +87,11 @@ Os registos deverão ser extraídos e preservados na Staging Area, assinalados c
 
 Não deverá ser atribuída uma referência de produto fictícia nem descartado o valor financeiro sem uma regra de negócio devidamente justificada.
 
-### 7.2. Clientes potencialmente duplicados
+### 7.2. Clientes duplicados
 
-Foram identificados dois registos de clientes, com os números 10 e 18, que apresentam o mesmo número de contribuinte normalizado e o mesmo nome normalizado.
+A comparação por semelhança (ver [`resultados.md`](../data-profiling/resultados.md), §5) identificou três pares de clientes duplicados: 10 e 18 (registos iguais), 8 e 22 e 5 e 26 (registos aproximados, com contribuintes que diferem em duas posições). Os três abrangem 9 das 37 faturas.
 
-Ambos deverão ser preservados durante a extração. A decisão de os consolidar deverá ser tomada numa etapa posterior, com base em regras de deduplicação e validação dos dados de negócio.
+Todos os registos são extraídos e preservados na Staging. Cada grupo é consolidado no sobrevivente (regra R01), com o mapeamento origem → sobrevivente guardado em `stg_customer_duplicate_groups`; a consolidação é feita na Staging e a origem não é alterada.
 
 ### 7.3. Inconsistências financeiras
 
@@ -107,7 +107,7 @@ O profiling identificou valores em falta em atributos de clientes, produtos e li
 
 A implementação deste mapeamento deverá permitir obter uma cópia rastreável dos dados operacionais na Staging Area, preparada para a execução das regras de qualidade e transformação.
 
-O mapeamento constitui a especificação da Fase 1. A estrutura técnica mínima executável está em [`03_ddl_staging_area.sql`](03_ddl_staging_area.sql); as tabelas tipadas `stg_<origem>` devem ser geradas a partir do inventário da origem, sem alterar os valores raw.
+O mapeamento constitui a especificação da Fase 1. As estruturas de apoio (lotes, rejeições e clientes duplicados) estão em [`03_ddl_staging_area.sql`](03_ddl_staging_area.sql) e as 12 tabelas tipadas `stg_<origem>` em [`05_ddl_staging_tabelas_tipadas.sql`](05_ddl_staging_tabelas_tipadas.sql); os testes da estrutura estão em [`06_testes_staging.sql`](06_testes_staging.sql).
 
 ## 9. Contrato físico da Staging Area
 
@@ -121,33 +121,40 @@ Cada tabela `stg_<origem>` mantém as colunas de negócio da origem, sem convers
 | `source_pk` | `nvarchar(250)` | Chave primária serializada de forma estável |
 | `extraction_timestamp` | `datetime2(3)` | Instante UTC da extração |
 | `validation_status` | `varchar(20)` | `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED` |
-| `validation_rule` | `varchar(10)` | Regra R01–R10, quando aplicável |
+| `validation_rule` | `varchar(10)` | Regra R01–R11, quando aplicável |
 | `validation_message` | `nvarchar(1000)` | Mensagem legível da validação |
 | `raw_row_hash` | `varbinary(32)` | Hash dos valores de origem, para idempotência |
 
 O `source_pk` é composto por `coluna=valor` em ordem alfabética das colunas da chave, usando `|` como separador. A chave não depende da ordem física da tabela. A tabela de origem nunca é atualizada pelo processo.
 
-### 9.1. Controlo de lotes e rejeições
+### 9.1. Controlo de lotes, rejeições e clientes duplicados
 
-`stg_load_control` regista `load_id`, origem, início/fim, contagens extraídas, válidas, rejeitadas e estado do lote. `stg_rejections` regista uma linha por registo e regra violada, incluindo `load_id`, `source_table`, `source_pk`, `raw_row_json`, `validation_rule`, `validation_message`, `rejected_at` e `resolution_status`. Assim, uma rejeição conserva os valores originais mesmo que a estrutura normalizada seja alterada.
+A Staging tem 15 tabelas: as 12 `stg_<origem>` e três de apoio.
 
-As 12 linhas de compras sem produto usam `R05`; as quatro linhas financeiras usam `R06`; as duas faturas divergentes usam `R07`. Uma linha rejeitada por R06 rejeita a fatura inteira, para que o frete só seja alocado sobre um conjunto completo de linhas.
+- `stg_load_control` regista `load_id`, origem, início e fim, contagens extraídas, válidas e rejeitadas e o estado do lote.
+- `stg_rejections` regista uma linha por registo e por regra violada: `load_id`, `source_table`, `source_pk`, `raw_row_json`, `validation_rule`, `validation_message`, `rejected_at` e `resolution_status` (`OPEN`, `RESOLVED`, `CANCELLED`). Conserva os valores originais do registo rejeitado em JSON.
+- `stg_customer_duplicate_groups` regista, por cliente de origem que pertence a um grupo de duplicados, o grupo, o sobrevivente, a semelhança do nome e o número de atributos corroborantes, o estado da decisão (`ACTIVE` ou `DISMISSED`), a carga em que foi tomada e a nota com os valores válidos e diferentes entre os membros. A decisão é persistente e só se desfaz por revisão explícita (regra R01, [`transformacoes-limpeza.md`](transformacoes-limpeza.md) §4).
+
+**Redundância e eficiência.** As tabelas `stg_<origem>` guardam todos os registos extraídos, com os valores da origem e o estado de validação. Por isso o JSON só é usado nas rejeições; não existe uma segunda cópia, em JSON, de todos os registos. Evita-se duplicar o volume da origem e manter o estado de validação em dois sítios. A idempotência assenta no `raw_row_hash` e na chave `(load_id, source_pk)` de cada tabela.
+
+**Regras que rejeitam.** As 12 linhas de compras sem produto usam `R05`; as quatro linhas financeiras usam `R06`; as duas faturas com cabeçalho diferente da soma das linhas usam `R07`; as duas faturas com frete incoerente usam `R11`. Uma rejeição por R06, R07 ou R11 rejeita a fatura inteira, para que o frete só seja alocado sobre um conjunto completo de linhas. No conjunto, são rejeitadas 7 das 37 faturas (4 989,88 de 49 341,33; 10,1 % do valor).
 
 ### 9.2. Mapeamento coluna a coluna e validação
 
 | Origem → Staging | Tipo preservado | Transformação de carga | Validação |
 |---|---|---|---|
 | Todas as colunas de `categories`, `customers`, `employees`, `families`, `invoices`, `invoices_lines`, `products`, `purchases`, `purchases_lines`, `stocks_movements`, `suplliers`, `zones` | Tipo, precisão e escala da origem | Cópia 1:1; `NULL` permanece `NULL`; espaços só são removidos numa coluna de comparação | Chave primária não nula; hash e metadados obrigatórios |
-| `customers.taxpayer_number`, nome, email e morada | Tipo da origem + colunas normalizadas | `normalised_*` apenas para comparação; vazio torna-se `NULL` na coluna transformada | R01 para colisões; não fundir sem aprovação |
+| `customers.taxpayer_number`, nome, email e morada | Tipo da origem + colunas normalizadas | `normalised_*` apenas para comparação; vazio ou formato inválido torna-se `NULL` na coluna transformada | R01: deteção de duplicados por semelhança e consolidação no sobrevivente (`stg_customer_duplicate_groups`) |
 | `invoices_lines.quantity`, `unit_price`, `line_total` | `decimal(14,4)` / `decimal(19,6)` | Preservar sinal e precisão | R06 quando `line_total <> quantity * unit_price` |
 | `invoices.products_total` e linhas da fatura | `decimal(19,6)` | Calcular `line_sum` e `header_line_difference` | R07 quando `ABS(difference) > 0,01` |
+| `invoices.final_total`, `products_total`, `shipping_cost`, `vat_value` | `decimal(19,6)` | Preservar | R11 quando `ABS(final_total - (products_total + shipping_cost + vat_value)) > 0,01` |
 | `purchases_lines.product` | Tipo da origem | Nenhuma substituição | R05 quando nulo ou vazio |
 
 ### 9.3. Staging → Data Mart
 
 | Staging | Destino | Transformação / chave |
 |---|---|---|
-| `stg_customers` | `Dim_Cliente` | BK `customers.number`; SCD1/SCD2 conforme dicionário; zona desconhecida usa membro técnico |
+| `stg_customers` + `stg_customer_duplicate_groups` | `Dim_Cliente` | BK = número do sobrevivente do grupo (ou o próprio número, se não pertencer a um grupo); atributos consolidados segundo R01; SCD1/SCD2 conforme dicionário; zona desconhecida usa membro técnico |
 | `stg_products` + `stg_families` + `stg_categories` | `Dim_Produto` | BK `products.reference`; SCD2 para classificação; fallback de classificação documentado |
 | `stg_suplliers` + `stg_zones` | `Dim_Fornecedor` | BK `suplliers.number`; `-1` apenas quando fornecedor é descritivo e nulo |
 | `stg_employees` | `Dim_Funcionario` | BK `employees.number`; pesquisa temporal da versão SCD2 |

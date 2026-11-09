@@ -213,10 +213,8 @@ CREATE TABLE dbo.stg_customers (
     normalised_taxpayer   varchar(20) NULL,   -- NIF sem separadores, so para comparacao (R01)
     normalised_email      varchar(45) NULL,   -- email normalizado, so para comparacao (R09)
     normalised_address    varchar(55) NULL,   -- morada normalizada, so para comparacao (R09)
-    duplicate_group_id    int NULL,   -- grupo de potenciais duplicados (R01)
     CONSTRAINT PK_stg_customers PRIMARY KEY (stg_row_id),
     CONSTRAINT FK_stg_customers_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id),
-    CONSTRAINT FK_stg_customers_dup FOREIGN KEY (duplicate_group_id) REFERENCES dbo.stg_customer_duplicate_groups (duplicate_group_id),
     CONSTRAINT CK_stg_customers_src CHECK (source_table = N'customers'),
     CONSTRAINT CK_stg_customers_pk CHECK (source_pk LIKE N'number=%'),
     CONSTRAINT CK_stg_customers_status CHECK (validation_status IN ('VALID', 'CORRIGIDO', 'PENDING', 'REJECTED')),

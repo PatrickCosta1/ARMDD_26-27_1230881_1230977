@@ -27,13 +27,19 @@ WHERE name IN ('stg_categories', 'stg_customers', 'stg_employees', 'stg_families
                'stg_products', 'stg_purchases', 'stg_purchases_lines', 'stg_stocks_movements', 'stg_suplliers', 'stg_zones');
 
 INSERT @T (Teste, Ok, Detalhe)
-SELECT '1.02 Existem as 4 tabelas de apoio (lotes, raw, rejeicoes, duplicados)', CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END, CONCAT('tabelas=', COUNT(*))
+SELECT '1.02 Existem as 3 tabelas de apoio (lotes, rejeicoes, duplicados)', CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END, CONCAT('tabelas=', COUNT(*))
 FROM sys.tables
-WHERE name IN ('stg_load_control', 'stg_raw_rows', 'stg_rejections', 'stg_customer_duplicate_groups');
+WHERE name IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '1.03 A tabela tecnica sysdiagrams nao foi copiada', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, NULL
 FROM sys.tables WHERE name LIKE '%sysdiagrams%';
+
+INSERT @T (Teste, Ok, Detalhe)
+SELECT '1.04 Nao existe copia em JSON de todos os registos (stg_raw_rows): o JSON so existe em stg_rejections',
+       CASE WHEN OBJECT_ID('dbo.stg_raw_rows') IS NULL
+             AND EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.stg_rejections') AND name = 'raw_row_json')
+            THEN 1 ELSE 0 END, NULL;
 
 /*------------- 2. Colunas de negocio iguais as da origem (tipo, nulabilidade) -------------*/
 INSERT @T (Teste, Ok, Detalhe)
@@ -54,7 +60,7 @@ INSERT @T (Teste, Ok, Detalhe)
 SELECT '2.02 Cada tabela stg_ tem todas as colunas tecnicas do contrato',
        CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, CONCAT('tabelas incompletas=', COUNT(*))
 FROM sys.tables t
-WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_raw_rows', 'stg_rejections', 'stg_customer_duplicate_groups')
+WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups')
   AND (SELECT COUNT(*) FROM sys.columns c WHERE c.object_id = t.object_id
        AND c.name IN ('stg_row_id', 'load_id', 'source_table', 'source_pk', 'extraction_timestamp',
                       'validation_status', 'validation_rule', 'validation_message', 'raw_row_hash')) <> 9;
@@ -65,7 +71,7 @@ SELECT '2.03 Tipos das colunas tecnicas (stg_row_id bigint, load_id bigint, time
 FROM sys.tables t
 JOIN sys.columns c ON c.object_id = t.object_id
 JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_raw_rows', 'stg_rejections', 'stg_customer_duplicate_groups')
+WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups')
   AND NOT (   (c.name = 'stg_row_id' AND ty.name = 'bigint')
            OR (c.name = 'load_id' AND ty.name = 'bigint')
            OR (c.name = 'extraction_timestamp' AND ty.name = 'datetime2' AND c.scale = 3)
@@ -79,12 +85,12 @@ FROM sys.columns WHERE object_id = OBJECT_ID('dbo.stg_employees') AND name = 'gr
 
 /*--------------------- 3. Colunas auxiliares da Staging -------------------------*/
 INSERT @T (Teste, Ok, Detalhe)
-SELECT '3.01 Colunas auxiliares existem (frete, soma das linhas, diferenca, normalizadas, grupo de duplicados, fallback)',
-       CASE WHEN COUNT(*) = 9 THEN 1 ELSE 0 END, CONCAT('encontradas=', COUNT(*), ' de 9')
+SELECT '3.01 Colunas auxiliares existem (frete, soma das linhas, diferenca, normalizadas, fallback)',
+       CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END, CONCAT('encontradas=', COUNT(*), ' de 8')
 FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id
 WHERE (t.name = 'stg_invoices_lines' AND c.name = 'frete_alocado')
    OR (t.name = 'stg_invoices' AND c.name IN ('line_sum', 'header_line_difference'))
-   OR (t.name = 'stg_customers' AND c.name IN ('normalised_name', 'normalised_taxpayer', 'normalised_email', 'normalised_address', 'duplicate_group_id'))
+   OR (t.name = 'stg_customers' AND c.name IN ('normalised_name', 'normalised_taxpayer', 'normalised_email', 'normalised_address'))
    OR (t.name = 'stg_products' AND c.name = 'classification_fallback');
 
 INSERT @T (Teste, Ok, Detalhe)
@@ -104,32 +110,40 @@ JOIN sys.tables t ON t.object_id = k.parent_object_id
 JOIN sys.index_columns ic ON ic.object_id = k.parent_object_id AND ic.index_id = k.unique_index_id
 JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
 WHERE k.type = 'PK' AND c.name = 'stg_row_id' AND t.name LIKE 'stg[_]%'
-  AND t.name NOT IN ('stg_load_control', 'stg_raw_rows', 'stg_rejections', 'stg_customer_duplicate_groups');
+  AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.02 As 12 tabelas tem FK de load_id para stg_load_control',
        CASE WHEN COUNT(*) = 12 THEN 1 ELSE 0 END, CONCAT('FK=', COUNT(*))
 FROM sys.foreign_keys
 WHERE referenced_object_id = OBJECT_ID('dbo.stg_load_control')
-  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_raw_rows', 'stg_rejections');
+  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_rejections', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.03 As 12 tabelas tem UNIQUE (load_id, source_pk)',
        CASE WHEN COUNT(*) = 12 THEN 1 ELSE 0 END, CONCAT('UQ=', COUNT(*))
-FROM sys.key_constraints WHERE type = 'UQ' AND name LIKE 'UQ[_]stg[_]%[_]load' AND name <> 'UQ_stg_raw_row_load';
+FROM sys.key_constraints WHERE type = 'UQ' AND name LIKE 'UQ[_]stg[_]%[_]load';
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.04 As 12 tabelas tem CHECK de estado, de source_table e do formato de source_pk (36 restricoes)',
        CASE WHEN COUNT(*) = 36 THEN 1 ELSE 0 END, CONCAT('CK=', COUNT(*))
 FROM sys.check_constraints
 WHERE (name LIKE 'CK[_]stg[_]%[_]status' OR name LIKE 'CK[_]stg[_]%[_]src' OR name LIKE 'CK[_]stg[_]%[_]pk')
-  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_load_control', 'stg_raw_rows', 'stg_rejections', 'stg_customer_duplicate_groups');
+  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
-SELECT '4.05 stg_customers tem FK para stg_customer_duplicate_groups',
-       CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END, NULL
-FROM sys.foreign_keys
-WHERE parent_object_id = OBJECT_ID('dbo.stg_customers') AND referenced_object_id = OBJECT_ID('dbo.stg_customer_duplicate_groups');
+SELECT '4.05 stg_customer_duplicate_groups: PK por cliente, FK do sobrevivente para a propria tabela e FK para o lote',
+       CASE WHEN (SELECT COUNT(*) FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID('dbo.stg_customer_duplicate_groups') AND type = 'PK') = 1
+             AND (SELECT COUNT(*) FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('dbo.stg_customer_duplicate_groups')
+                  AND referenced_object_id = OBJECT_ID('dbo.stg_customer_duplicate_groups')) = 1
+             AND (SELECT COUNT(*) FROM sys.foreign_keys WHERE parent_object_id = OBJECT_ID('dbo.stg_customer_duplicate_groups')
+                  AND referenced_object_id = OBJECT_ID('dbo.stg_load_control')) = 1
+            THEN 1 ELSE 0 END, NULL;
+
+INSERT @T (Teste, Ok, Detalhe)
+SELECT '4.06 stg_customers nao tem coluna de grupo: o mapeamento de duplicados esta so em stg_customer_duplicate_groups',
+       CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, NULL
+FROM sys.columns WHERE object_id = OBJECT_ID('dbo.stg_customers') AND name = 'duplicate_group_id';
 
 /*------------------------ 5. Comportamento com dados ----------------------------*/
 BEGIN TRANSACTION;
@@ -229,18 +243,6 @@ BEGIN TRY
     FROM dbo.stg_products WHERE reference = 'PRODTESTE';
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.12 Produto so com a referencia e aceite; classification_fallback = 0 por omissao', 0, ERROR_MESSAGE()); END CATCH;
 
--- clientes: grupo de duplicados inexistente
-BEGIN TRY
-    INSERT dbo.stg_customers (load_id, source_pk, extraction_timestamp, raw_row_hash,
-        number, name, taxpayer_number, phone, mobile, contact, email, address, clity, zip_code, zone, type,
-        seller, days_pay_invoices, BBAN, segment, create_date, create_time, last_update_date, last_update_time,
-        duplicate_group_id)
-    VALUES (@l1, N'number=9001', SYSUTCDATETIME(), 0x0C,
-        9001, 'Cliente Teste', '123456789', '', '', '', '', '', '', '', NULL, 'Empresa',
-        0, 30, '', 'Retalho', '2025-01-01', '00:00', '2025-01-01', '00:00', 999999);
-    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.13 FK: duplicate_group_id inexistente e rejeitado', 0, NULL);
-END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.13 FK: duplicate_group_id inexistente e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
-
 -- clientes: zona e vazios preservados (zone NULL, texto vazio sem conversao)
 BEGIN TRY
     INSERT dbo.stg_customers (load_id, source_pk, extraction_timestamp, raw_row_hash,
@@ -250,16 +252,77 @@ BEGIN TRY
         9002, 'Cliente Teste 2', '000000000', '', '', '', '', '', '', '', NULL, 'Empresa',
         0, 30, '', 'Retalho', '2025-01-01', '00:00', '2025-01-01', '00:00');
     INSERT @T (Teste, Ok, Detalhe)
-    SELECT '5.14 Cliente sem zona e com campos vazios e guardado sem conversao (zone NULL, email vazio)',
+    SELECT '5.13 Cliente sem zona e com campos vazios e guardado sem conversao (zone NULL, email vazio)',
            CASE WHEN zone IS NULL AND email = '' THEN 1 ELSE 0 END, NULL
     FROM dbo.stg_customers WHERE number = 9002;
-END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.14 Cliente sem zona e com campos vazios e guardado sem conversao (zone NULL, email vazio)', 0, ERROR_MESSAGE()); END CATCH;
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.13 Cliente sem zona e com campos vazios e guardado sem conversao (zone NULL, email vazio)', 0, ERROR_MESSAGE()); END CATCH;
+
+-- clientes duplicados: sobrevivente e absorvido (decisao persistente, R01)
+BEGIN TRY
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number, decided_load_id)
+    VALUES (9101, 9101, 9101, @l1);
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number,
+                                              name_similarity, corroborating_attributes, decided_load_id, review_note)
+    VALUES (9102, 9101, 9101, 0.85, 4, @l1, N'taxpayer_number: 300455644 / 300456544');
+    INSERT @T (Teste, Ok, Detalhe)
+    SELECT '5.14 Grupo de duplicados: sobrevivente e absorvido aceites, estado ACTIVE por omissao',
+           CASE WHEN COUNT(*) = 2 AND MIN(review_status) = 'ACTIVE' AND MAX(review_status) = 'ACTIVE' THEN 1 ELSE 0 END, NULL
+    FROM dbo.stg_customer_duplicate_groups WHERE duplicate_group_id = 9101;
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.14 Grupo de duplicados: sobrevivente e absorvido aceites, estado ACTIVE por omissao', 0, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY  -- sobrevivente inexistente
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number,
+                                              name_similarity, corroborating_attributes, decided_load_id)
+    VALUES (9103, 9103, 9199, 0.90, 3, @l1);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.15 FK: sobrevivente que nao pertence a tabela e rejeitado', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.15 FK: sobrevivente que nao pertence a tabela e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY  -- absorvido sem criterio registado
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number, decided_load_id)
+    VALUES (9104, 9101, 9101, @l1);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.16 CK: cliente absorvido sem semelhanca e atributos corroborantes e rejeitado', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.16 CK: cliente absorvido sem semelhanca e atributos corroborantes e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY  -- o mesmo cliente em dois grupos
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number,
+                                              name_similarity, corroborating_attributes, decided_load_id)
+    VALUES (9102, 9101, 9101, 0.85, 4, @l1);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.17 PK: o mesmo cliente de origem so pode ter uma decisao', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.17 PK: o mesmo cliente de origem so pode ter uma decisao', 1, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY  -- decisao desfeita sem data de revisao
+    UPDATE dbo.stg_customer_duplicate_groups SET review_status = 'DISMISSED' WHERE source_customer_number = 9102;
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.18 CK: decisao desfeita (DISMISSED) exige a data da revisao', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.18 CK: decisao desfeita (DISMISSED) exige a data da revisao', 1, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY  -- semelhanca fora do intervalo
+    INSERT dbo.stg_customer_duplicate_groups (source_customer_number, duplicate_group_id, survivor_customer_number,
+                                              name_similarity, corroborating_attributes, decided_load_id)
+    VALUES (9105, 9101, 9101, 1.50, 4, @l1);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.19 CK: semelhanca do nome fora de 0 a 1 e rejeitada', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.19 CK: semelhanca do nome fora de 0 a 1 e rejeitada', 1, ERROR_MESSAGE()); END CATCH;
+
+-- rejeicoes: a regra R11 cabe em validation_rule e o estado de resolucao tem valor por omissao
+BEGIN TRY
+    INSERT dbo.stg_rejections (load_id, source_table, source_pk, raw_row_json, validation_rule, validation_message)
+    VALUES (@l1, N'invoices', N'invoice_stamp_id=FTESTE1', N'{"invoice_stamp_id":"FTESTE1"}', 'R11', N'frete incoerente');
+    INSERT @T (Teste, Ok, Detalhe)
+    SELECT '5.20 Rejeicao com a regra R11 e guardada com o JSON original e resolution_status = OPEN por omissao',
+           CASE WHEN resolution_status = 'OPEN' AND validation_rule = 'R11' THEN 1 ELSE 0 END, NULL
+    FROM dbo.stg_rejections WHERE source_pk = N'invoice_stamp_id=FTESTE1';
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.20 Rejeicao com a regra R11 e guardada com o JSON original e resolution_status = OPEN por omissao', 0, ERROR_MESSAGE()); END CATCH;
+
+BEGIN TRY
+    INSERT dbo.stg_rejections (load_id, source_table, source_pk, raw_row_json, validation_rule, validation_message, resolution_status)
+    VALUES (@l1, N'invoices', N'invoice_stamp_id=FTESTE2', N'{}', 'R07', N'divergencia', 'FECHADA');
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 CK: estado de resolucao fora de OPEN/RESOLVED/CANCELLED e rejeitado', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 CK: estado de resolucao fora de OPEN/RESOLVED/CANCELLED e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
 
 ROLLBACK TRANSACTION;
 
 /*------------------------------- Resultado ---------------------------------*/
 -- se um teste rebentar com erro nao regista resultado; por isso o total tambem e verificado
-DECLARE @esperados int = 28;
+DECLARE @esperados int = 37;
 IF (SELECT COUNT(*) FROM @T) <> @esperados
     INSERT @T (Teste, Ok, Detalhe)
     VALUES ('9.99 Numero de testes executados = esperado', 0, CONCAT('executados=', (SELECT COUNT(*) FROM @T), '; esperados=', @esperados));
