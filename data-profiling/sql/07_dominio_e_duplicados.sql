@@ -137,6 +137,49 @@ SELECT MIN(invoice_date) AS PrimeiraFatura, MAX(invoice_date) AS UltimaFatura,
 FROM dbo.invoices;
 GO
 
+-- ---------------------------------------------------------------------------
+-- 7.4.b. Coerência do frete (regra R11)
+--   O total final deve ser igual a produtos + frete + IVA (tolerância 0,01).
+--   Em todas as faturas, total_for_vat - products_total é 2,5 % dos produtos;
+--   shipping_cost só coincide com esse valor em 35 das 37 faturas.
+-- ---------------------------------------------------------------------------
+SELECT invoice_stamp_id, invoice_date, customer,
+       products_total, shipping_cost,
+       total_for_vat - products_total AS Frete_Incluido_No_Total,
+       CAST(100.0 * (total_for_vat - products_total) / NULLIF(products_total, 0) AS decimal(6, 3)) AS Pct_Incluido,
+       CAST(100.0 * shipping_cost / NULLIF(products_total, 0) AS decimal(6, 3)) AS Pct_shipping_cost,
+       final_total - (products_total + shipping_cost + vat_value) AS Diferenca_R11
+FROM dbo.invoices
+WHERE ABS(final_total - (products_total + shipping_cost + vat_value)) > 0.01
+ORDER BY invoice_date;
+
+-- Faturas rejeitadas por regra (R06: linha; R07: cabeçalho vs linhas; R11: frete)
+WITH l AS (
+    SELECT invoice_stamp_id, SUM(line_total) AS soma,
+           MAX(CASE WHEN ABS(line_total - quantity * unit_price) > 0.01 THEN 1 ELSE 0 END) AS r06
+    FROM dbo.invoices_lines
+    GROUP BY invoice_stamp_id
+), f AS (
+    SELECT i.invoice_stamp_id, i.final_total, l.r06,
+           CASE WHEN ABS(i.products_total - l.soma) > 0.01 THEN 1 ELSE 0 END AS r07,
+           CASE WHEN ABS(i.final_total - (i.products_total + i.shipping_cost + i.vat_value)) > 0.01
+                THEN 1 ELSE 0 END AS r11
+    FROM dbo.invoices AS i
+    JOIN l ON l.invoice_stamp_id = i.invoice_stamp_id
+)
+SELECT SUM(CASE WHEN r06 = 1 OR r07 = 1 OR r11 = 1 THEN 1 ELSE 0 END) AS FaturasRejeitadas,
+       COUNT(*) AS FaturasTotal,
+       SUM(CASE WHEN r06 = 1 OR r07 = 1 OR r11 = 1 THEN final_total ELSE 0 END) AS ValorRejeitado,
+       SUM(final_total) AS ValorTotal,
+       CAST(100.0 * SUM(CASE WHEN r06 = 1 OR r07 = 1 OR r11 = 1 THEN final_total ELSE 0 END)
+            / SUM(final_total) AS decimal(5, 2)) AS PctValorRejeitado,
+       (SELECT COUNT(*) FROM dbo.invoices_lines AS x
+        WHERE x.invoice_stamp_id IN (SELECT invoice_stamp_id FROM f WHERE r06 = 1 OR r07 = 1 OR r11 = 1)) AS LinhasAfetadas,
+       (SELECT COUNT(*) FROM dbo.invoices_lines) AS LinhasTotal,
+       SUM(CASE WHEN r11 = 1 AND r06 = 0 AND r07 = 0 THEN 1 ELSE 0 END) AS ApenasR11
+FROM f;
+GO
+
 /* ===========================================================================
    PARTE B - Duplicados aproximados
    ===========================================================================

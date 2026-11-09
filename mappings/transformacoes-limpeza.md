@@ -29,6 +29,7 @@ A identificação de uma anomalia não prova, por si só, que exista um erro de 
 | R08 | Possíveis referências a entidades inexistentes | Validar as referências não nulas contra as entidades de origem correspondentes. | Os testes atuais não encontraram referências inválidas nas relações verificadas. Se forem detetadas em cargas futuras, sinalizar e manter os registos problemáticos na estrutura própria da Staging Area, excluindo-os do Data Mart até resolução. |
 | R09 | Diferenças de representação textual | Aplicar normalização controlada, como remoção de espaços exteriores e normalização de maiúsculas/minúsculas para comparação. | Utilizar valores normalizados para validação e comparação, sem perder os valores originais. Não modificar nomes ou identificadores de negócio de forma irreversível. |
 | R10 | Repetição de registos em cargas sucessivas | Usar as chaves primárias da origem e os atributos de criação/última atualização disponíveis para identificar registos novos ou alterados. | Implementar carregamento incremental idempotente. Uma nova execução não deve duplicar registos já carregados; a estratégia concreta depende da validação dos campos de auditoria e será especificada na etapa de carregamento incremental. |
+| R11 | Duas faturas em que `final_total` difere de `products_total + shipping_cost + vat_value` (`shipping_cost` superior ao frete incluído no total em 2,50 e 5,00) | Comparar o total final com a soma dos componentes do cabeçalho, com tolerância de 0,01. | Rejeitar a fatura inteira: o frete a alocar às linhas parte de `shipping_cost` e não há informação para decidir qual dos valores é o frete efetivo. Não são apanhadas por R06 nem por R07. |
 
 ## 3. Classificação dos problemas
 
@@ -75,7 +76,11 @@ O limiar 0,80 e o mínimo de duas corroborações foram validados sobre a amostr
 
 ### 4.4. Mapeamento e rastreabilidade
 
-`stg_customer_duplicate_groups` guarda, por cliente de origem, o grupo, o sobrevivente, o critério (semelhança e atributos corroborantes) e a nota de divergência. O mapeamento é recalculado em cada carga, antes da dimensão Cliente. Se uma carga futura detetar um novo duplicado, as faturas ainda não carregadas seguem o novo mapeamento e as já carregadas são reapontadas ao sobrevivente.
+`stg_customer_duplicate_groups` guarda, por cliente de origem, o grupo, o sobrevivente, o critério (semelhança e atributos corroborantes), a nota de divergência e a data da decisão.
+
+A decisão é persistente: depois de gravada, só se desfaz por revisão explícita (estado `DISMISSED`). Uma alteração posterior aos atributos de um cliente não a invalida, porque isso separaria o cliente absorvido do sobrevivente e as faturas novas ficariam numa versão diferente das antigas, partindo o histórico. Em cada carga o critério de 4.2 só avalia pares em que pelo menos um dos clientes ainda não tem decisão (cliente novo ou ainda isolado), comparando-o com os clientes não absorvidos; um cliente já absorvido não é reavaliado.
+
+Um novo duplicado detetado numa carga posterior só altera o mapeamento a partir dessa carga. Reapontar as faturas já carregadas ao sobrevivente exige que `Fact_Vendas` guarde o cliente de origem (proposta `BK_Cliente_Origem`), o que fica a decidir no modelo dimensional.
 
 ### 4.5. Fornecedores
 
@@ -140,6 +145,7 @@ Ficam fechadas as seguintes decisões para a Fase 1:
 - **Membro desconhecido:** só é usado para atributos descritivos ausentes que não impedem a identificação do facto, por exemplo fornecedor, zona ou contacto. Nunca substitui uma referência de produto, cliente, documento, quantidade, preço ou total inválida.
 - **Contactos opcionais:** permanecem `NULL`. Valores vazios são normalizados para `NULL` numa coluna transformada, conservando o valor bruto.
 - **Vendas com IVA:** `Valor_Liquido + Valor_IVA`, sem frete. O frete apenas entra em `Total_Faturado` e nas análises que o pedem explicitamente. A origem indica IVA ao nível dos produtos, pelo que não se presume IVA sobre o frete.
+- **Frete incoerente (R11):** as duas faturas em que `final_total` difere de `products_total + shipping_cost + vat_value` são rejeitadas integralmente. Somadas às faturas de R06 e R07 (5 faturas, 2 656,84), as rejeições passam a 7 de 37 faturas, 11 de 93 linhas e 4 989,88 de 49 341,33 (10,1 % do valor).
 - **Frete:** é alocado proporcionalmente ao valor líquido das linhas válidas da fatura, arredondado a 6 casas, e o resíduo é atribuído à última linha por ordem estável de `invoice_line_stamp_id`. Se alguma linha da fatura for rejeitada, a fatura inteira é rejeitada.
 - **Moeda:** a taxa é obtida de uma fonte de câmbio versionada por moeda e data da fatura. Para EUR a taxa é 1. Se não existir taxa aplicável, o registo fica rejeitado; não se usa a taxa do dia anterior sem regra documentada.
 - **Idempotência:** `source_table + source_pk + load_id` identifica a extração e `source_table + source_pk` identifica o registo lógico. O Data Mart usa as chaves de negócio e `MERGE`/upsert controlado; repetir o mesmo lote não cria factos adicionais.

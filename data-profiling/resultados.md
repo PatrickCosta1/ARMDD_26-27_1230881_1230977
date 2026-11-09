@@ -246,6 +246,28 @@ As divergências são de 5,00 em ambos os documentos, com sinais opostos. Os val
 
 Na listagem devolvida pela consulta, os registos apresentados usam a moeda `EURO`. Os cabeçalhos incluem total de produtos, custo de expedição, total para IVA, valor de IVA e total final. Esta observação deve ser interpretada de acordo com o conjunto efetivamente devolvido pela consulta; não deve ser generalizada para registos que não tenham sido incluídos no resultado.
 
+### 6.4. Coerência do frete no cabeçalho
+
+Em todas as 37 faturas a diferença `total_for_vat - products_total` é exatamente 2,5 % do total de produtos, e `final_total = total_for_vat + vat_value`. O campo `shipping_cost` coincide com essa diferença em 35 faturas; nas outras duas é superior ([`07_dominio_e_duplicados.sql`](sql/07_dominio_e_duplicados.sql), 7.4.b):
+
+| Fatura (data, cliente) | Total de produtos | `shipping_cost` | Frete incluído no total | Diferença |
+|---|---:|---:|---:|---:|
+| 2025-03-31, cliente 6 | 1 008,00 | 27,70 (2,75 %) | 25,20 (2,50 %) | 2,50 |
+| 2025-04-30, cliente 4 | 851,00 | 26,275 (3,09 %) | 21,275 (2,50 %) | 5,00 |
+
+Estas duas faturas não são apanhadas pelas verificações das linhas nem pela comparação entre cabeçalho e linhas: os totais de produtos coincidem com a soma das linhas. Como o frete alocado às linhas parte de `shipping_cost`, a incoerência afetaria a medida de frete. Não existe informação que permita decidir qual dos dois valores é o frete efetivo.
+
+### 6.5. Faturas afetadas por problemas financeiros
+
+| Regra | Faturas | Valor (`final_total`) |
+|---|---:|---:|
+| Linha com quantidade × preço diferente do total (4 linhas) | 4 | 2 362,02 |
+| Cabeçalho diferente da soma das linhas | 2 | 475,65 |
+| Frete incoerente (só esta regra) | 2 | 2 333,05 |
+| **Total (sem sobreposição)** | **7** | **4 989,88** |
+
+Das 37 faturas, 7 (18,9 %) e 11 de 93 linhas ficam afetadas; em valor, 4 989,88 de 49 341,33 (10,1 %). Uma fatura é afetada simultaneamente pelas duas primeiras regras, pelo que a soma por regra excede o total sem sobreposição.
+
 ## 7. Resultado 06 - Integridade referencial
 
 Os testes executados não identificaram registos sem correspondência nas relações verificadas.
@@ -276,6 +298,7 @@ Os resultados indicam que os registos verificados têm correspondência nas enti
 | Formato e domínio | 4 NIF de clientes não identificativos; 1 email de cliente e 2 de funcionários inválidos; 2 produtos sem taxa de IVA; 8 produtos e 8 fornecedores com `last_update_date` anterior a `create_date` | Tratar como ausentes nas colunas transformadas (R02); a carga incremental não depende só de `last_update_date` |
 | Inconsistência de cálculo em linhas de fatura | 4 linhas | Confirmar a regra de sinal antes de corrigir ou rejeitar |
 | Divergência entre cabeçalho e linhas | 2 faturas; diferença de 5,00 e -5,00 | Sinalizar e investigar, sem substituir automaticamente os valores |
+| Frete incoerente | 2 faturas com `shipping_cost` superior ao frete incluído no total (2,50 e 5,00) | Rejeitar a fatura inteira (R11) |
 | Integridade referencial | 0 registos sem correspondência nos testes executados | Resultado favorável limitado às relações e aos testes realizados |
 
 ## 9. Conclusões e implicações para a Staging Area
@@ -287,7 +310,7 @@ As prioridades identificadas são:
 1. Preservar e sinalizar as 12 linhas de compra sem produto identificado.
 2. Consolidar os três pares de clientes duplicados (10 e 18, 8 e 22, 5 e 26) num sobrevivente, sem perder a rastreabilidade das faturas.
 3. Investigar as quatro linhas de fatura com discrepâncias entre quantidade, preço e total.
-4. Investigar as duas faturas cujo total de produtos diverge da soma das linhas.
+4. Investigar as duas faturas cujo total de produtos diverge da soma das linhas e as duas cujo `shipping_cost` não coincide com o frete incluído no total.
 5. Definir regras para atributos em falta com base na sua obrigatoriedade e utilização no modelo dimensional.
 
 De acordo com os requisitos do trabalho, os registos com problemas de qualidade cuja correção não possa ser automatizada devem ser armazenados em estruturas próprias da Staging Area e não carregados no Data Mart. A correção manual e o posterior carregamento desses registos ficam fora do âmbito definido para o trabalho.
@@ -313,6 +336,7 @@ Os resultados anteriores justificam as regras de carregamento documentadas em
 - as 12 linhas de compras sem produto ficam rejeitadas na Staging e fora do Data Mart de vendas;
 - as quatro linhas com quantidade ou preço negativo ficam rejeitadas até ser confirmada a sua semântica;
 - as duas faturas com divergência entre cabeçalho e linhas ficam rejeitadas integralmente;
+- as duas faturas com frete incoerente (R11) ficam rejeitadas integralmente; no total são rejeitadas 7 faturas de 37 (4 989,88 de 49 341,33, 10,1 % do valor);
 - contactos e atributos descritivos ausentes podem usar `NULL` ou membro `Desconhecido`, mas nunca substituem chaves ou medidas inválidas;
 - a comparação financeira usa tolerância de `0,01` e preserva os valores originais.
 
