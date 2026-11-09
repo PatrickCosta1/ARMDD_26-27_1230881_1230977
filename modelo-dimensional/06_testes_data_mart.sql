@@ -262,6 +262,13 @@ SELECT '5.03 Nenhuma coluna SK_/BK_ do facto aceita NULL',
        CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, NULL
 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Fact_Vendas' AND IS_NULLABLE = 'YES';
 
+BEGIN TRY  -- email invalido de funcionario (por exemplo dois @) e carregado como NULL (R02)
+    INSERT dbo.Dim_Funcionario (BK_Funcionario, Codigo, Nome, Email, Grupo, Departamento, Data_Inicio, Data_Fim, Versao_Atual,
+                                Data_Criacao_Origem, Data_Atualizacao_Origem, Hash_SCD1, Hash_SCD2)
+    VALUES (91, 'teste2', N'Func Sem Email', NULL, N'Vendedor', N'Armazenagem', '1900-01-01', '9999-12-31', 1, '2025-01-01', '2025-01-01', 0x01, 0x01);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.04 Dim_Funcionario aceita Email NULL (email invalido tratado como ausente)', 1, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.04 Dim_Funcionario aceita Email NULL (email invalido tratado como ausente)', 0, ERROR_MESSAGE()); END CATCH;
+
 ROLLBACK TRANSACTION;
 
 /*------------------------------- Resultado ---------------------------------*/

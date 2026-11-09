@@ -144,7 +144,7 @@ CREATE TABLE dbo.Dim_Funcionario (
     BK_Funcionario           numeric(6,0)  NOT NULL,     -- employees.number
     Codigo                   varchar(20)   NOT NULL,     -- SCD1
     Nome                     nvarchar(30)  NOT NULL,     -- SCD1
-    Email                    varchar(100)  NOT NULL,     -- SCD1
+    Email                    varchar(100)  NULL,         -- SCD1 (NULL se vazio ou com formato invalido: R02)
     Grupo                    nvarchar(20)  NOT NULL,     -- SCD2
     Departamento             nvarchar(20)  NOT NULL,     -- SCD2
     BK_Chefe                 numeric(6,0)  NULL,         -- SCD2
