@@ -197,6 +197,7 @@ CREATE TABLE dbo.Fact_Vendas (
     SK_Moeda                 smallint      NOT NULL,
     Numero_Fatura           char(25)      NOT NULL,     -- dimensao degenerada
     BK_Linha_Fatura          char(25)      NOT NULL,     -- invoices_lines.invoice_line_stamp_id
+    BK_Cliente_Origem        numeric(10,0) NOT NULL,     -- customers.number da fatura (antes de consolidar duplicados)
     Quantidade               decimal(14,4) NOT NULL,     -- negativa em devolucoes
     Preco_Unitario           decimal(19,6) NOT NULL,     -- nao aditivo
     Valor_Liquido            decimal(19,6) NOT NULL,     -- sem IVA e sem frete
@@ -233,6 +234,7 @@ CREATE NONCLUSTERED INDEX IX_Fact_Produto     ON dbo.Fact_Vendas (SK_Produto);
 CREATE NONCLUSTERED INDEX IX_Fact_Fornecedor  ON dbo.Fact_Vendas (SK_Fornecedor);
 CREATE NONCLUSTERED INDEX IX_Fact_Funcionario ON dbo.Fact_Vendas (SK_Funcionario);
 CREATE NONCLUSTERED INDEX IX_Fact_Numero_Fatura ON dbo.Fact_Vendas (Numero_Fatura);
+CREATE NONCLUSTERED INDEX IX_Fact_Cliente_Origem ON dbo.Fact_Vendas (BK_Cliente_Origem);   -- remapeamento de duplicados
 -- Pesquisa da versao vigente na carga (SCD2); UNIQUE garante uma so versao corrente por BK
 CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Cliente_Atual     ON dbo.Dim_Cliente     (BK_Cliente)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
 CREATE UNIQUE NONCLUSTERED INDEX IX_Dim_Produto_Atual     ON dbo.Dim_Produto     (BK_Produto)     INCLUDE (Data_Inicio, Data_Fim) WHERE Versao_Atual = 1;
