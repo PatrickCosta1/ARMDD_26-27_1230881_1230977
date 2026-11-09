@@ -76,7 +76,7 @@ Justificação: se um cliente mudar de zona, as vendas passadas devem manter-se 
 
 ## 7. Clientes duplicados
 
-Os clientes potencialmente duplicados não são consolidados automaticamente. Os clientes 10 e 18 permanecem distintos, com o mesmo grupo de revisão na Staging, até existir confirmação explícita; as duas faturas conservam o identificador do respetivo cliente. Na amostra, o data profiling identificou como potenciais duplicados o cliente *Eira e Beira, lda* (NIF 502323434), registado com os números 10 e 18.
+O enunciado pede a eliminação dos registos duplicados, iguais ou aproximadamente iguais. O profiling encontrou três pares de clientes (10/18, 8/22 e 5/26), que afetam 9 das 37 faturas e 26 % do valor. São consolidados no sobrevivente (o registo atualizado mais recentemente), com um mapa persistente na Staging que só se desfaz por revisão. A dimensão tem uma linha por cliente real e as faturas dos clientes absorvidos passam para o sobrevivente; o facto guarda o cliente de origem (`BK_Cliente_Origem`) para rastreabilidade e para reapontar faturas se um duplicado for detetado depois da carga.
 
 ## 7.1 Dados em falta e registos rejeitados
 
@@ -89,7 +89,7 @@ Os atributos pedidos pelas dez análises (semestre, quadrimestre, semana, estaç
 ## 9. Decisões fechadas
 
 - "Vendas com IVA" é `Valor_Liquido + Valor_IVA`, sem frete.
-- As 4 linhas com sinal negativo e as 2 faturas com totais divergentes são rejeitadas até validação de negócio.
+- As 4 linhas com sinal negativo, as 2 faturas com cabeçalho diferente das linhas (R07) e as 2 com frete incoerente (R11) são rejeitadas até validação de negócio: 7 de 37 faturas, 10,1 % do valor.
 - "Desconhecido" é reservado a atributos descritivos; chaves, medidas e relações inválidas são rejeitadas.
-- Duplicados aproximados ficam em revisão e não são fundidos automaticamente.
+- Os clientes duplicados (iguais e aproximados) são consolidados no sobrevivente, com mapa persistente; o facto guarda o cliente de origem.
 - O mapeamento Staging → Data Mart e as regras de rejeição são os definidos em `mappings/source-to-staging.md` e `mappings/transformacoes-limpeza.md`.

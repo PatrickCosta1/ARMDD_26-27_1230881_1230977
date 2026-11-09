@@ -8,17 +8,17 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 
 | Convenção | Regra |
 |---|---|
-| `limpa(x)` | `LTRIM(RTRIM(x))`; se o resultado for vazio → `NULL`. O valor bruto fica sempre em `raw_row_json` |
+| `limpa(x)` | `LTRIM(RTRIM(x))`; se o resultado for vazio → `NULL`. O valor bruto fica na própria coluna de `stg_<origem>` (cópia 1:1); o JSON só existe em `stg_rejections` |
 | Auditoria | `Data_Criacao_Origem = create_date + create_time`; `Data_Atualizacao_Origem = last_update_date + last_update_time` (`datetime2(0)`). Se forem nulos na origem (2 produtos na amostra) usa-se `1900-01-01` |
 | `Hash_SCD1` / `Hash_SCD2` | `HASHBYTES('SHA2_256', ...)` dos atributos SCD1 / SCD2 **já transformados**, concatenados por `\|` com `NULL` → texto vazio e com `CONCAT` |
-| Só carregam | registos com `validation_status` `VALID` ou `CORRIGIDO` (a Staging usa `PENDING` / `REJECTED`; nos documentos de regras aparecem como "pendente" / "rejeitado") |
+| Só carregam | registos com `validation_status` `VALID` ou `CORRIGIDO` (`PENDING` e `REJECTED` não carregam) |
 | Vigência SCD2 | 1.ª versão: `Data_Inicio = 1900-01-01`. Nova versão: `Data_Inicio = max(CAST(last_update_date AS date), Data_Inicio_anterior + 1)`; a anterior fecha com `Data_Fim = Data_Inicio_nova − 1`, `Versao_Atual = 0` |
 
-## 2. `Dim_Cliente` ← `stg_customers`, `stg_zones`, `stg_employees`
+## 2. `Dim_Cliente` ← `stg_customers`, `stg_customer_duplicate_groups`, `stg_zones`, `stg_employees`
 
 | Atributo destino (tipo) | Origem | Transformação / limpeza | SCD |
 |---|---|---|---|
-| BK_Cliente `numeric(10,0)` | `customers.number` | Cópia | — |
+| BK_Cliente `numeric(10,0)` | `customers.number` | `COALESCE(survivor_customer_number, number)`, juntando `stg_customers` a `stg_customer_duplicate_groups` por `source_customer_number` com `review_status = 'ACTIVE'`. Só os sobreviventes originam linhas da dimensão | — |
 | Nome `nvarchar(55)` | `customers.name` | `limpa`; vazio → rejeitar (identificação) | 1 |
 | NIF `varchar(20)` | `customers.taxpayer_number` | Remover espaços e separadores; vazio ou só zeros → `N/D` (R02). Não entra na deteção de duplicados se `N/D` | 1 |
 | Contacto `nvarchar(30)` | `customers.contact` | `limpa` | 1 |
@@ -36,7 +36,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Dias_Pagamento `smallint` | `customers.days_pay_invoices` | Cópia | 1 |
 | *(excluído)* | `customers.BBAN` | Dado financeiro desnecessário (minimização de dados) | — |
 
-**Duplicados (clientes 10 e 18):** são carregados como dois clientes distintos (`stg_customer_duplicate_groups`, estado `PENDING_REVIEW`). Uma futura consolidação reaponta as faturas ao sobrevivente na carga seguinte.
+**Clientes duplicados (R01):** os pares 10/18, 8/22 e 5/26 são consolidados num único cliente (sobreviventes 18, 8 e 5). `Dim_Cliente` tem uma linha por cliente real, com a chave de negócio do sobrevivente, e os clientes absorvidos não geram linhas próprias. Cada atributo usa o valor do sobrevivente se for válido; se for ausente ou inválido usa o valor válido do membro absorvido (por exemplo o email `coro@sapo.pt` do cliente 26 no grupo 5/26). Quando os dois valores são válidos e diferentes (NIF, nome e morada nos grupos 5/26 e 8/22), prevalece o do sobrevivente e a divergência fica em `review_note`. O mapa é persistente: uma decisão `ACTIVE` não é recalculada quando os atributos mudam e só se desfaz por revisão (`DISMISSED`).
 
 ## 3. `Dim_Produto` ← `stg_products`, `stg_families`, `stg_categories`
 
@@ -92,13 +92,14 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 |---|---|---|
 | SK_Data_Fatura `int` | `invoices.invoice_date` | `yyyymmdd`; data fora de `Dim_Data` → rejeitar |
 | SK_Data_Pagamento `int` | `invoices.payment_date` | `yyyymmdd`; `NULL` → `−1`. Na amostra a data está sempre preenchida e pode ser de vencimento (a confirmar) |
-| SK_Cliente `int` | `invoices.customer` | Pesquisa em `Dim_Cliente` por `BK_Cliente` e `invoice_date BETWEEN Data_Inicio AND Data_Fim` |
+| SK_Cliente `int` | `invoices.customer` | Cliente → sobrevivente (`COALESCE(survivor_customer_number, customer)` em `stg_customer_duplicate_groups`, estado `ACTIVE`) e pesquisa em `Dim_Cliente` por `BK_Cliente` e `invoice_date BETWEEN Data_Inicio AND Data_Fim` |
 | SK_Produto `int` | `invoices_lines.product` | Idem, em `Dim_Produto` |
 | SK_Fornecedor `int` | `products.supplyer` do produto da linha | Idem, em `Dim_Fornecedor`; `NULL` → `−1` |
 | SK_Funcionario `int` | `invoices.employee` | Idem, em `Dim_Funcionario` |
 | SK_Moeda `smallint` | `invoices.currency` | `EURO` → `EUR` → `Dim_Moeda` |
 | Numero_Fatura `char(25)` | `invoices.invoice_stamp_id` | Cópia |
 | BK_Linha_Fatura `char(25)` | `invoices_lines.invoice_line_stamp_id` | Cópia; chave do *upsert* |
+| BK_Cliente_Origem `numeric(10,0)` | `invoices.customer` | Cópia, **antes** de consolidar duplicados. Guarda de que cliente de origem veio a fatura e permite reapontar as faturas já carregadas se um duplicado for detetado numa carga posterior |
 | Quantidade `decimal(14,4)` | `invoices_lines.quantity` | Cópia, sem alterar o sinal |
 | Preco_Unitario `decimal(19,6)` | `invoices_lines.unit_price` | Cópia |
 | Valor_Liquido `decimal(19,6)` | `invoices_lines.line_total` | Cópia; R06 (`≠ quantidade × preço`) rejeita a fatura |
@@ -117,21 +118,25 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 
 1. Ler da Staging os registos `VALID`/`CORRIGIDO` do lote com `last_update` posterior à última carga bem-sucedida (ou todos, se for a 1.ª carga).
 2. Calcular `Hash_SCD1` e `Hash_SCD2` sobre os valores transformados.
-3. Procurar a versão corrente por BK (`Versao_Atual = 1`):
+3. Em `Dim_Cliente`, partir só dos sobreviventes do mapa `stg_customer_duplicate_groups` e consolidar os atributos do grupo. Procurar a versão corrente por BK (`Versao_Atual = 1`):
    - **não existe** → inserir versão com `Data_Inicio = 1900-01-01`;
    - **`Hash_SCD2` igual e `Hash_SCD1` diferente** → atualizar (tipo 1) **todas** as versões desse BK;
    - **`Hash_SCD2` diferente** → fechar a versão corrente e inserir nova versão (tipo 2) com os atributos SCD1 atuais;
    - **hashes iguais** → nada a fazer (repetir o lote não altera nada).
 4. As dimensões carregam **antes** dos factos.
 
-## 9. Colunas que a Staging tem de fornecer (verificação cruzada)
+## 9. Colunas que a Staging fornece (verificação cruzada)
 
-As tabelas tipadas `stg_<origem>` ainda não existem em [03_ddl_staging_area.sql](03_ddl_staging_area.sql). Para este mapeamento funcionar, têm de existir:
+A Staging tem 15 tabelas (12 `stg_<origem>` e 3 de apoio: `stg_load_control`, `stg_rejections` e `stg_customer_duplicate_groups`). O quadro mostra onde está cada necessidade deste mapeamento.
 
 | Necessidade do Data Mart | Onde |
 |---|---|
 | Todas as colunas de negócio das 9 tabelas acima, com o tipo da origem (incluindo `BBAN`, que **não** sobe para o Data Mart) | `stg_customers`, `stg_products`, `stg_families`, `stg_categories`, `stg_suplliers`, `stg_zones`, `stg_employees`, `stg_invoices`, `stg_invoices_lines` |
-| Colunas técnicas `load_id`, `validation_status`, `validation_rule`, `raw_row_hash` | todas |
-| `frete_alocado`, `line_sum` (Σ das linhas) e `header_line_difference` | `stg_invoices_lines` / `stg_invoices` |
-| Marca de que a classificação do produto veio do *fallback* da família | `stg_products` (decisão 6 pede para registar a origem do valor; o Data Mart não tem coluna para isso) |
-| Estado `PENDING_REVIEW` do grupo de duplicados por cliente | `stg_customer_duplicate_groups` (já existe) |
+| Colunas técnicas `load_id`, `validation_status`, `validation_rule`, `raw_row_hash` | todas as `stg_<origem>` |
+| `frete_alocado` (linhas), `line_sum` e `header_line_difference` (fatura) | `stg_invoices_lines` / `stg_invoices` |
+| Marca de que a classificação do produto veio do *fallback* da família | `stg_products.classification_fallback`; o Data Mart não tem coluna para isso |
+| Mapa origem → sobrevivente dos clientes duplicados | `stg_customer_duplicate_groups` (`source_customer_number`, `survivor_customer_number`, `review_status`) |
+| Registos rejeitados, com os valores originais | `stg_rejections` (JSON só aqui). R06, R07 e R11 rejeitam a fatura inteira |
+| Marca para a carga incremental | `MAX(last_update)` das tabelas `stg_`; `stg_load_control` não tem `source_table` |
+
+Só entram em `Fact_Vendas` faturas sem R06, R07 e R11 (7 das 37 faturas ficam de fora: 4 989,88 de 49 341,33, ou 10,1 % do valor).
