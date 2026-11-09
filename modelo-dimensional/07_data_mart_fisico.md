@@ -39,6 +39,7 @@ O `04_ddl_data_mart.sql` cria `MoreRhythm_DM` por omissão; o nome é configurá
 | Índice único `IX_Dim_*_Atual` (era não único) | Garante uma só versão corrente por chave de negócio |
 | `CK_Dim_*_Vigencia` | Impede versões incoerentes (`Data_Fim < Data_Inicio`; versão fechada com `9999-12-31`; versão corrente com data de fim) |
 | FK composta facto → `Dim_Taxa_Cambio` | Aplica a regra "sem taxa de câmbio, o registo é rejeitado" na própria base de dados |
+| `BK_Cliente_Origem numeric(10,0) NOT NULL` e índice `IX_Fact_Cliente_Origem` em `Fact_Vendas` | Os clientes duplicados são consolidados na dimensão (`stg_customer_duplicate_groups`); o facto guarda o cliente de origem da fatura, para rastreabilidade e para reapontar faturas se um duplicado só for detetado numa carga posterior |
 | `BK_Cliente` e `BK_Fornecedor` para `numeric(10,0)`; `BK_Funcionario` e `BK_Chefe` para `numeric(6,0)` | Alinhar com os tipos da origem (`customers.number`, `suplliers.number`: `numeric(10,0)`; `employees.number`, `chief`: `numeric(6,0)`); os tipos anteriores eram mais estreitos que o domínio da origem |
 | `CK_Fact_Taxa_Positiva`, `CK_Fact_Fatura_Dia` | Taxa positiva; a data da fatura é sempre uma data real |
 
