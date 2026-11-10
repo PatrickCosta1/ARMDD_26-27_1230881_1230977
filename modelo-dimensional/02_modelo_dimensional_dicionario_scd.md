@@ -21,7 +21,7 @@
 
 ### Frete (custo de expedição)
 
-O `shipping_cost` está na fatura, não na linha (nas 37 faturas da amostra varia entre 2,5% e 3,1% do total de produtos). Para o ter ao nível da granularidade escolhida:
+O `shipping_cost` está na fatura, não na linha (em 35 das 37 faturas da amostra equivale a 2,5% do total de produtos, e esse mesmo valor é o que entra em `total_for_vat` e `final_total`; nas 2 faturas restantes o `shipping_cost` do cabeçalho excede-o em 2,50 e 5,00, o que a regra R11 rejeita). Para o ter ao nível da granularidade escolhida:
 
 - **Alocação proporcional ao valor líquido da linha:** `frete_linha = shipping_cost × line_total / Σ line_total da fatura`
 - A última linha de cada fatura absorve o resto do arredondamento, para que `Σ frete_linha = shipping_cost`.
@@ -65,13 +65,14 @@ Convenções: `Hash_SCD1` / `Hash_SCD2` (`varbinary(32)`, não nulos, nas quatro
 | SK_Venda | bigint IDENTITY | PK | N | Chave substituta da linha de factos | — |
 | SK_Data_Fatura | int | FK → Dim_Data | N | Data da fatura (papel principal) | `invoices.invoice_date` |
 | SK_Data_Pagamento | int | FK → Dim_Data | N | Data de pagamento (papel secundário). Na origem `payment_date` é sempre preenchida (03/02 a 31/12/2025, nunca anterior à fatura): pode ser data de vencimento, a confirmar com o negócio | `invoices.payment_date` |
-| SK_Cliente | int | FK → Dim_Cliente | N | Versão do cliente à data da venda | `invoices.customer` |
+| SK_Cliente | int | FK → Dim_Cliente | N | Versão do cliente (sobrevivente, se houver duplicado) à data da venda | `invoices.customer` e mapa de duplicados |
 | SK_Produto | int | FK → Dim_Produto | N | Versão do produto à data da venda | `invoices_lines.product` |
 | SK_Fornecedor | int | FK → Dim_Fornecedor | N | Fornecedor do produto vendido; **−1 ("Sem fornecedor")** quando `products.supplyer` é nulo (12 produtos na amostra) | `products.supplyer` |
 | SK_Funcionario | int | FK → Dim_Funcionario | N | Funcionário que emitiu a fatura | `invoices.employee` |
 | SK_Moeda | smallint | FK → Dim_Moeda | N | Moeda original da fatura | `invoices.currency` |
 | Numero_Fatura | char(25) | — (dim. degenerada) | N | Identificador da fatura | `invoices.invoice_stamp_id` |
 | BK_Linha_Fatura | char(25) | UK | N | Identificador da linha (lineage e carga incremental) | `invoices_lines.invoice_line_stamp_id` |
+| BK_Cliente_Origem | numeric(10,0) | — | N | Cliente de origem da fatura, antes de consolidar duplicados. Permite reapontar o facto se um duplicado for detetado mais tarde | `invoices.customer` |
 | Quantidade | decimal(14,4) | — | N | Unidades vendidas (negativa em devoluções) | `invoices_lines.quantity` |
 | Preco_Unitario | decimal(19,6) | — | N | Preço unitário, moeda original (não aditivo) | `invoices_lines.unit_price` |
 | Valor_Liquido | decimal(19,6) | — | N | Venda sem IVA e sem frete, moeda original | `invoices_lines.line_total` |
@@ -123,16 +124,16 @@ Membro especial: SK = −1 ("Sem data"), usado em `SK_Data_Pagamento` quando nã
 
 ### 3.3 `Dim_Cliente`
 
-Origem: `customers` + `zones`. **Um cliente de origem = uma chave de negócio**; potenciais duplicados não são consolidados automaticamente (ver §6).
+Origem: `customers` + `zones` + `stg_customer_duplicate_groups`. **Uma linha por cliente real:** os duplicados (pares 10/18, 8/22 e 5/26) são consolidados no sobrevivente, e a chave de negócio é a do sobrevivente (ver §6).
 
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
 | SK_Cliente | int IDENTITY | PK | N | Chave substituta | — |
-| BK_Cliente | numeric(10,0) | — | N | `customers.number` | — |
+| BK_Cliente | numeric(10,0) | — | N | `COALESCE(survivor_customer_number, number)` | — |
 | Nome | nvarchar(55) | — | N | Nome | 1 |
-| NIF | varchar(20) | — | N | `taxpayer_number` (chave de deteção de duplicados). Em falta/vazio ou `000000000` → `N/D` (1 cliente sem NIF e 1 com `000000000` na amostra) | 1 |
+| NIF | varchar(20) | — | N | `taxpayer_number` (chave de deteção de duplicados). Vazio ou só zeros → `N/D` (4 clientes na amostra: um em branco, `0`, `00` e `000000000`) | 1 |
 | Contacto | nvarchar(30) | — | **S** | Pessoa de contacto | 1 |
-| Email | varchar(45) | — | **S** | Email | 1 |
+| Email | varchar(45) | — | **S** | Email; vazio ou com formato inválido (por exemplo `coro.sapo.pt`) → `NULL` (R02); o valor original fica na Staging | 1 |
 | Telefone | varchar(60) | — | **S** | `phone` | 1 |
 | Telemovel | varchar(45) | — | **S** | `mobile` | 1 |
 | Morada | nvarchar(55) | — | **S** | Morada | 1 |
@@ -213,7 +214,7 @@ Origem: `employees`.
 | BK_Funcionario | numeric(6,0) | — | N | `employees.number` | — |
 | Codigo | varchar(20) | — | N | `code` (login) | 1 |
 | Nome | nvarchar(30) | — | N | Nome | 1 |
-| Email | varchar(100) | — | N | Email | 1 |
+| Email | varchar(100) | — | **S** | Email; vazio ou com formato inválido (por exemplo dois `@`, nos funcionários 2 e 5) → `NULL` (R02), como nos clientes e fornecedores; o valor original fica na Staging | 1 |
 | Grupo | nvarchar(20) | — | N | Vendedor, Administrativo, Administrador | **2** |
 | Departamento | nvarchar(20) | — | N | Armazenagem, Administrativo, Direcção | **2** |
 | BK_Chefe | numeric(6,0) | — | **S** | Número do chefe (vazio para a direção) | **2** |
@@ -257,7 +258,7 @@ Origem: `employees`.
 
 ## 5. Estratégias SCD — resumo e justificação
 
-A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (`Hash_SCD1` / `Hash_SCD2`) nos registos cuja `last_update` seja mais recente que a última carga.
+A origem regista data/hora de criação e de cada alteração (`create_*`, `last_update_*`), mas **não guarda histórico dos valores anteriores**. O histórico começa por isso no primeiro carregamento. A deteção de alterações faz-se por **comparação com a versão atual** (`Hash_SCD1` / `Hash_SCD2`) e, nas tabelas com datas de auditoria fiáveis (clientes, funcionários, famílias, faturas e linhas), só nos registos cuja `last_update` seja mais recente que a última carga. Em produtos e fornecedores, onde 8 de 67 e 8 de 14 registos têm `last_update` anterior à criação, e em zonas e categorias, que não têm auditoria, lê-se tudo e a alteração deteta-se pelo *hash*.
 
 | Tipo | Quando se usa | Efeito |
 |---|---|---|
@@ -278,15 +279,16 @@ A origem regista data/hora de criação e de cada alteração (`create_*`, `last
 
 ## 6. Clientes duplicados
 
-O data profiling do Patrick (`data-profiling/resultados.md`, §5) classifica os clientes 10 e 18 como **potenciais duplicados** (mesmo NIF normalizado `502323434` e mesmo nome normalizado *EIRA E BEIRA, LDA*; cada um tem 1 fatura, de 90,36 e 471,88). A proposta do modelo é:
+O enunciado exige eliminar as redundâncias, iguais ou aproximadas. O profiling do Patrick (`data-profiling/resultados.md`, §5) encontra três pares: 10/18 (iguais), 8/22 e 5/26 (nome, NIF e morada com variações). Afetam 9 das 37 faturas e 12 831,12 de 49 341,33 (26 % do valor); sem consolidação, as análises por cliente ficariam distorcidas. Por isso o modelo consolida:
 
-- Os grupos de duplicados ficam em `stg_customer_duplicate_groups` (Staging), mantendo sempre os identificadores originais (regra R01: não eliminar nenhum cliente de origem). Um sobrevivente só existe depois de revisão (`survivor_customer_number`).
-- A `Dim_Cliente` mantém ambos enquanto o estado for `PENDING_REVIEW`; as faturas apontam para o respetivo cliente de origem. Só após aprovação explícita será criado um mapa para um sobrevivente, sem perder as duas linhas de factos.
-- **Duplicados exatos:** o mesmo NIF (válido, diferente de `N/D` e `000000000`) **e** o mesmo nome normalizado (maiúsculas, acentos, espaços e pontuação). Casos 10 e 18.
-- **Duplicados aproximados:** mesmo NIF com nome/morada quase iguais, ou nome muito semelhante com a mesma morada ou email. Regras e limiares a definir com o Patrick; os casos duvidosos **não** são fundidos automaticamente e vão para revisão.
-- **Sobrevivente:** não há critério automático (decisão fechada n.º 4). Quando um grupo for `CONFIRMED`, o revisor indica `survivor_customer_number`; as faturas dos restantes passam a apontar para o sobrevivente numa nova carga.
+- **Deteção** (regra R01): semelhança do nome (1 menos a distância de Levenshtein sobre o maior comprimento) de pelo menos 0,80 e pelo menos dois de seis atributos corroborantes (mesmo código postal; morada com semelhança ≥ 0,80; mesmo telefone ou telemóvel; mesmo email válido; mesmo BBAN; NIF válidos a distância de Levenshtein ≤ 2). O nome sozinho não decide.
+- **Sobrevivente:** o membro com a atualização mais recente (empate: menor número). Resultado: 18, 8 e 5.
+- **Mapa:** `stg_customer_duplicate_groups` guarda, por cliente de origem, o grupo, o sobrevivente e o critério. Os identificadores originais não se perdem. A decisão é **persistente**: só se desfaz por revisão explícita, porque recalculá-la a cada carga partiria o histórico quando um atributo mudasse.
+- **`Dim_Cliente`:** uma linha por cliente real. Cada atributo usa o valor válido do sobrevivente, ou o do membro absorvido se o do sobrevivente for ausente ou inválido.
+- **Facto:** `SK_Cliente` resolve a versão do sobrevivente à data da fatura. `BK_Cliente_Origem` guarda o cliente de origem, o que permite reapontar faturas já carregadas se um novo duplicado for detetado.
+- **Fornecedores 8 e 14** têm o mesmo NIF mas localidade, zona e produtos diferentes: são estabelecimentos distintos e não se consolidam (a zona do fornecedor é usada na análise 10).
 
-## 6.1 Tratamento de dados em falta e inválidos (alinhado com as regras R01–R10 do Patrick)
+## 6.1 Tratamento de dados em falta e inválidos (alinhado com as regras R01–R11 do Patrick)
 
 Princípio comum: **atributo descritivo em falta → membro "Desconhecido" (visível, não esconde a venda)**; **identificador, medida ou integridade comprometida → registo rejeitado para a Staging** (fora do Data Mart).
 
@@ -294,11 +296,12 @@ Princípio comum: **atributo descritivo em falta → membro "Desconhecido" (vis�
 |---|---|---|
 | 12 produtos sem fornecedor (R04) | Fornecedor é descritivo | `SK_Fornecedor = −1` ("Sem fornecedor"); a venda é carregada |
 | 2 clientes sem zona (R03) | Zona não se infere | `Zona = 'Zona desconhecida'` (e `Pais = 'Desconhecido'`) |
-| 1 cliente sem NIF e 1 com `000000000` (R02) | NIF não identifica | `NIF = 'N/D'`; fora da deteção de duplicados |
-| Email/telemóvel em falta (R02) | Atributos opcionais | Ficam `NULL` |
+| 4 clientes com NIF não identificativo: em branco, `0`, `00`, `000000000` (R02) | NIF não identifica | `NIF = 'N/D'`; fora da deteção de duplicados |
+| Email ou telemóvel em falta, ou email com formato inválido (R02: 1 cliente e 2 funcionários) | Atributos opcionais | Ficam `NULL`; o valor original fica na Staging |
 | 2 produtos sem designação/família/categoria (R04) | Descritivos | Carregados em `Dim_Produto` com "Desconhecida"; sem vendas na amostra |
 | 4 linhas de fatura com `line_total ≠ quantidade × preço` (R06) | Sinal incerto | **Rejeitar a fatura** enquanto a regra de sinal não for confirmada (ver abaixo) |
 | 2 faturas com cabeçalho ≠ soma das linhas (R07) | Valor correto desconhecido | **Rejeitar a fatura** |
+| 2 faturas com `final_total ≠ produtos + frete + IVA` (R11): `shipping_cost` excede em 2,50 e 5,00 o frete incluído no total | Qual dos fretes é o efetivo é desconhecido | **Rejeitar a fatura** |
 | 12 linhas de compra sem produto (R05) | — | Fora do âmbito deste data mart (compras); ficam rejeitadas na Staging |
 
 **Porquê rejeitar a fatura inteira, e não só a linha?** O frete é alocado sobre o conjunto das linhas da fatura. Se uma linha fosse retirada, o frete das outras ficava sobrestimado e a soma deixava de reconciliar com `shipping_cost`. Rejeitar a fatura mantém o controlo `Σ frete_alocado = shipping_cost` válido em tudo o que é carregado.
@@ -312,9 +315,9 @@ Todas as 10 análises estão cobertas pelas dimensões e atributos descritos na 
 ## 8. Decisões fechadas para a Fase 1
 
 1. As **4 linhas de fatura** com quantidade ou preço negativo ficam rejeitadas até confirmação da semântica; não são convertidas para positivos.
-2. As **2 faturas** com cabeçalho diferente da soma das linhas são rejeitadas integralmente.
+2. As **2 faturas** com cabeçalho diferente da soma das linhas (R07) e as **2** com frete incoerente (R11) são rejeitadas integralmente. No conjunto são 7 faturas de 37 (4 989,88; 10,1 % do valor).
 3. Um atributo descritivo em falta usa o membro `Desconhecido`; uma chave, medida ou relação inválida é rejeitada na Staging.
-4. Os clientes 10 e 18 continuam separados e marcados como potenciais duplicados; não há critério automático de sobrevivente.
+4. Os clientes duplicados (10/18, 8/22 e 5/26) são consolidados num sobrevivente, com mapa persistente e `BK_Cliente_Origem` no facto; o enunciado exige eliminar duplicados iguais ou aproximados.
 5. **Vendas com IVA** significa `Valor_Liquido + Valor_IVA`, sem frete. O frete só entra em `Total_Faturado` e nas análises de frete.
 6. A classificação de produto usa `products.classification`; quando ausente, usa `families.classification` apenas como fallback documentado e marca a origem do valor.
 7. A taxa de câmbio é a taxa por moeda e data da fatura; EUR usa 1. Na ausência de taxa, o registo é rejeitado.

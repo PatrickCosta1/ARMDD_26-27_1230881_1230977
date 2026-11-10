@@ -149,12 +149,12 @@ DECLARE @sk_cli2 int = (SELECT SK_Cliente FROM dbo.Dim_Cliente WHERE BK_Cliente 
 
 /* Facto: inserir duas linhas (cada uma aponta para a sua versao do cliente) */
 INSERT dbo.Fact_Vendas (SK_Data_Fatura, SK_Data_Pagamento, SK_Cliente, SK_Produto, SK_Fornecedor, SK_Funcionario, SK_Moeda,
-                        Numero_Fatura, BK_Linha_Fatura, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado,
+                        Numero_Fatura, BK_Linha_Fatura, BK_Cliente_Origem, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado,
                         Taxa_Cambio, Valor_Liquido_EUR, Valor_IVA_EUR, Frete_Alocado_EUR,
                         Data_Criacao_Origem, Data_Atualizacao_Origem, ID_Lote_ETL, Hash_Linha)
-VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE1', 'LINHATESTE1', 2, 50, 100, 23, 3, 1, 100, 23, 3,
+VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE1', 'LINHATESTE1', 9001, 2, 50, 100, 23, 3, 1, 100, 23, 3,
         '2025-03-15', '2025-03-15', 1, 0x0A),
-       (20250415, 20250501, @sk_cli2, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE2', 'LINHATESTE2', 1, 80, 80, 18.4, 2.5, 1, 80, 18.4, 2.5,
+       (20250415, 20250501, @sk_cli2, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE2', 'LINHATESTE2', 9001, 1, 80, 80, 18.4, 2.5, 1, 80, 18.4, 2.5,
         '2025-04-15', '2025-04-15', 1, 0x0B);
 
 INSERT @T (Teste, Ok, Detalhe)
@@ -173,25 +173,25 @@ FROM dbo.Fact_Vendas f JOIN dbo.Dim_Data d ON d.SK_Data = f.SK_Data_Pagamento WH
 
 BEGIN TRY  -- BK de linha duplicada
     INSERT dbo.Fact_Vendas (SK_Data_Fatura, SK_Data_Pagamento, SK_Cliente, SK_Produto, SK_Fornecedor, SK_Funcionario, SK_Moeda,
-        Numero_Fatura, BK_Linha_Fatura, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
+        Numero_Fatura, BK_Linha_Fatura, BK_Cliente_Origem, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
         Valor_Liquido_EUR, Valor_IVA_EUR, Frete_Alocado_EUR, Data_Criacao_Origem, Data_Atualizacao_Origem, ID_Lote_ETL, Hash_Linha)
-    VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE1', 'LINHATESTE1', 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
+    VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATTESTE1', 'LINHATESTE1', 9001, 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
     INSERT @T (Teste, Ok, Detalhe) VALUES ('4.01 UQ: BK_Linha_Fatura duplicada e rejeitada', 0, NULL);
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('4.01 UQ: BK_Linha_Fatura duplicada e rejeitada', 1, ERROR_MESSAGE()); END CATCH;
 
 BEGIN TRY  -- FK: cliente inexistente
     INSERT dbo.Fact_Vendas (SK_Data_Fatura, SK_Data_Pagamento, SK_Cliente, SK_Produto, SK_Fornecedor, SK_Funcionario, SK_Moeda,
-        Numero_Fatura, BK_Linha_Fatura, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
+        Numero_Fatura, BK_Linha_Fatura, BK_Cliente_Origem, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
         Valor_Liquido_EUR, Valor_IVA_EUR, Frete_Alocado_EUR, Data_Criacao_Origem, Data_Atualizacao_Origem, ID_Lote_ETL, Hash_Linha)
-    VALUES (20250315, -1, 99999999, @sk_prod, @sk_forn, @sk_func, @eur, 'FATX', 'LINHAX', 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
+    VALUES (20250315, -1, 99999999, @sk_prod, @sk_forn, @sk_func, @eur, 'FATX', 'LINHAX', 9001, 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
     INSERT @T (Teste, Ok, Detalhe) VALUES ('4.02 FK: cliente inexistente e rejeitado', 0, NULL);
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('4.02 FK: cliente inexistente e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
 
 BEGIN TRY  -- sem taxa de cambio no dia (GBP) -> FK composta
     INSERT dbo.Fact_Vendas (SK_Data_Fatura, SK_Data_Pagamento, SK_Cliente, SK_Produto, SK_Fornecedor, SK_Funcionario, SK_Moeda,
-        Numero_Fatura, BK_Linha_Fatura, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
+        Numero_Fatura, BK_Linha_Fatura, BK_Cliente_Origem, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
         Valor_Liquido_EUR, Valor_IVA_EUR, Frete_Alocado_EUR, Data_Criacao_Origem, Data_Atualizacao_Origem, ID_Lote_ETL, Hash_Linha)
-    VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @gbp, 'FATX', 'LINHAX2', 1, 1, 1, 0, 0, 1.17, 1.17, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
+    VALUES (20250315, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @gbp, 'FATX', 'LINHAX2', 9001, 1, 1, 1, 0, 0, 1.17, 1.17, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
     INSERT @T (Teste, Ok, Detalhe) VALUES ('4.03 FK composta: facto GBP sem taxa nesse dia e rejeitado', 0, NULL);
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('4.03 FK composta: facto GBP sem taxa nesse dia e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
 
@@ -202,9 +202,9 @@ END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('4.04 CK: taxa de cam
 
 BEGIN TRY  -- facto sem data de fatura
     INSERT dbo.Fact_Vendas (SK_Data_Fatura, SK_Data_Pagamento, SK_Cliente, SK_Produto, SK_Fornecedor, SK_Funcionario, SK_Moeda,
-        Numero_Fatura, BK_Linha_Fatura, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
+        Numero_Fatura, BK_Linha_Fatura, BK_Cliente_Origem, Quantidade, Preco_Unitario, Valor_Liquido, Valor_IVA, Frete_Alocado, Taxa_Cambio,
         Valor_Liquido_EUR, Valor_IVA_EUR, Frete_Alocado_EUR, Data_Criacao_Origem, Data_Atualizacao_Origem, ID_Lote_ETL, Hash_Linha)
-    VALUES (-1, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATX', 'LINHAX3', 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
+    VALUES (-1, -1, @sk_cli1, @sk_prod, @sk_forn, @sk_func, @eur, 'FATX', 'LINHAX3', 9001, 1, 1, 1, 0, 0, 1, 1, 0, 0, '2025-03-15', '2025-03-15', 1, 0x0C);
     INSERT @T (Teste, Ok, Detalhe) VALUES ('4.05 CK: SK_Data_Fatura = -1 e rejeitado', 0, NULL);
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('4.05 CK: SK_Data_Fatura = -1 e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
 
@@ -261,6 +261,13 @@ INSERT @T (Teste, Ok, Detalhe)
 SELECT '5.03 Nenhuma coluna SK_/BK_ do facto aceita NULL',
        CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, NULL
 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Fact_Vendas' AND IS_NULLABLE = 'YES';
+
+BEGIN TRY  -- email invalido de funcionario (por exemplo dois @) e carregado como NULL (R02)
+    INSERT dbo.Dim_Funcionario (BK_Funcionario, Codigo, Nome, Email, Grupo, Departamento, Data_Inicio, Data_Fim, Versao_Atual,
+                                Data_Criacao_Origem, Data_Atualizacao_Origem, Hash_SCD1, Hash_SCD2)
+    VALUES (91, 'teste2', N'Func Sem Email', NULL, N'Vendedor', N'Armazenagem', '1900-01-01', '9999-12-31', 1, '2025-01-01', '2025-01-01', 0x01, 0x01);
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.04 Dim_Funcionario aceita Email NULL (email invalido tratado como ausente)', 1, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.04 Dim_Funcionario aceita Email NULL (email invalido tratado como ausente)', 0, ERROR_MESSAGE()); END CATCH;
 
 ROLLBACK TRANSACTION;
 

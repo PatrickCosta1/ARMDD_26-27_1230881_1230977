@@ -8,7 +8,7 @@
 |---|---|---|
 | 1 | [04_ddl_data_mart.sql](04_ddl_data_mart.sql) | Cria `MoreRhythm_DM`, dimensões, `Fact_Vendas`, índices, membros "Desconhecido" (SK −1) e as moedas EUR/GBP |
 | 2 | [05_carga_dim_data_moeda.sql](05_carga_dim_data_moeda.sql) | Popula `Dim_Data` (2020–2035, feriados nacionais, Páscoa calculada) e `Dim_Taxa_Cambio` (EUR = 1). Idempotente |
-| 3 | [06_testes_data_mart.sql](06_testes_data_mart.sql) | 33 testes de chaves, restrições, tipos, calendário e SCD2; os dados de teste são revertidos (`ROLLBACK`) |
+| 3 | [06_testes_data_mart.sql](06_testes_data_mart.sql) | 34 testes de chaves, restrições, tipos, calendário e SCD2; os dados de teste são revertidos (`ROLLBACK`) |
 
 Exemplo de execução (SQL Server, autenticação Windows). O nome da base de dados e o intervalo de anos são parâmetros SQLCMD; nada tem caminhos absolutos:
 
@@ -39,12 +39,14 @@ O `04_ddl_data_mart.sql` cria `MoreRhythm_DM` por omissão; o nome é configurá
 | Índice único `IX_Dim_*_Atual` (era não único) | Garante uma só versão corrente por chave de negócio |
 | `CK_Dim_*_Vigencia` | Impede versões incoerentes (`Data_Fim < Data_Inicio`; versão fechada com `9999-12-31`; versão corrente com data de fim) |
 | FK composta facto → `Dim_Taxa_Cambio` | Aplica a regra "sem taxa de câmbio, o registo é rejeitado" na própria base de dados |
+| `Dim_Funcionario.Email` passa a aceitar `NULL` | Os funcionários 2 e 5 têm emails com dois `@`; a regra R02 trata-os como ausentes (`NULL`) e a coluna era `NOT NULL`, o que faria falhar a carga desses registos |
+| `BK_Cliente_Origem numeric(10,0) NOT NULL` e índice `IX_Fact_Cliente_Origem` em `Fact_Vendas` | Os clientes duplicados são consolidados na dimensão (`stg_customer_duplicate_groups`); o facto guarda o cliente de origem da fatura, para rastreabilidade e para reapontar faturas se um duplicado só for detetado numa carga posterior |
 | `BK_Cliente` e `BK_Fornecedor` para `numeric(10,0)`; `BK_Funcionario` e `BK_Chefe` para `numeric(6,0)` | Alinhar com os tipos da origem (`customers.number`, `suplliers.number`: `numeric(10,0)`; `employees.number`, `chief`: `numeric(6,0)`); os tipos anteriores eram mais estreitos que o domínio da origem |
 | `CK_Fact_Taxa_Positiva`, `CK_Fact_Fatura_Dia` | Taxa positiva; a data da fatura é sempre uma data real |
 
 ## 4. Resultados dos testes
 
-Executados em SQL Server local, numa base de dados descartável (criada, testada e removida). Resultado: **33 de 33 testes OK**, e a segunda execução do script 05 não duplicou linhas (5 845 datas e 5 844 taxas EUR).
+Executados em SQL Server local, numa base de dados descartável (criada, testada e removida). Resultado: **34 de 34 testes OK**, e a segunda execução do script 05 não duplicou linhas (5 845 datas e 5 844 taxas EUR).
 
 | Grupo | O que valida |
 |---|---|
