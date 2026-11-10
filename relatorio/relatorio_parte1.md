@@ -22,7 +22,7 @@ A arquitetura tem quatro camadas, ligadas por um processo ETL implementado num *
 **Fluxo.**
 
 1. **Extração:** cada tabela de origem é copiada para a Staging, com o identificador do lote (`load_id`), a data da extração e um *hash* do registo. A extração é incremental sempre que a tabela tem colunas de auditoria (ver secção "Carga incremental").
-2. **Validação e limpeza:** aplicam-se as regras R01–R10. Cada registo fica `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED`. A normalização é feita em cópias de comparação; o valor original nunca se perde.
+2. **Validação e limpeza:** aplicam-se as regras R01 a R11. Cada registo fica `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED`. A normalização é feita em cópias de comparação; o valor original nunca se perde.
 3. **Rejeição:** os registos que não podem ser corrigidos automaticamente ficam em `stg_rejections`, com a regra violada e o motivo, e **não** são carregados no Data Mart, como o enunciado exige.
 4. **Carregamento:** as dimensões carregam antes do facto. Só entram registos `VALID` ou `CORRIGIDO`. O carregamento é incremental e idempotente.
 5. **Frete e moeda:** o frete (que na origem está ao nível da fatura) é repartido pelas linhas e os valores são convertidos para euros durante a transformação.
@@ -60,17 +60,43 @@ O esquema foi implementado em SQL Server (`04_ddl_data_mart.sql`) e validado com
 
 # Staging Area
 
-A Staging é a camada onde os dados são preservados, rastreados e validados antes de chegarem ao Data Mart. A estrutura mínima executável (`03_ddl_staging_area.sql`) contém:
+A Staging Area é a camada onde os dados extraídos são preservados, validados e separados antes de chegarem ao Data Mart. Reside na base de dados `MoreRhythm_STG`, no mesmo servidor do Data Mart, e é a estrutura onde, por exigência do enunciado, ficam os registos com problemas de qualidade que não se corrigem automaticamente.
+
+## Estruturas de dados
+
+![Estruturas da Staging Area](diagrama_staging.svg)
+
+A Staging tem 15 tabelas: as 12 tabelas `stg_<origem>`, uma por tabela de negócio da origem, e três de apoio. A lista completa de colunas, tipos e nulabilidade está no Anexo C.
 
 | Tabela | Função |
 |---|---|
-| `stg_load_control` | Um registo por execução: origem, início e fim, contagens (extraídas, validadas, rejeitadas), estado (`RUNNING`, `SUCCEEDED`, `FAILED`) e mensagem de erro |
-| `stg_raw_rows` | Cópia fiel de cada registo (`raw_row_json`) com tabela e chave de origem, instante da extração, *hash* e estado de validação |
-| `stg_rejections` | Um registo por violação de regra, com os valores originais, a regra (R01–R10), a mensagem e o estado de resolução (`OPEN`, `RESOLVED`, `CANCELLED`) |
-| `stg_customer_duplicate_groups` | Potenciais duplicados de clientes, com NIF e nome normalizados e estado de revisão (`PENDING_REVIEW`, `CONFIRMED`, `DISMISSED`) |
-| `stg_<origem>` (12 tabelas) | Cópia tipada de cada tabela de origem, com os mesmos nomes e tipos, mais as colunas técnicas abaixo |
+| `stg_<origem>` (12 tabelas) | Cópia de cada tabela de origem, com os mesmos nomes de coluna, tipos, precisão e nulabilidade, mais nove colunas técnicas (abaixo) e algumas colunas auxiliares de validação |
+| `stg_load_control` | Uma linha por execução de carga: sistema de origem, início e fim, contagens (extraídas, validadas, rejeitadas), estado (`RUNNING`, `SUCCEEDED`, `FAILED`) e mensagem de erro |
+| `stg_rejections` | Uma linha por registo e por regra violada: tabela e chave de origem, valores originais em JSON, regra (R01 a R11), mensagem e estado de resolução (`OPEN`, `RESOLVED`, `CANCELLED`) |
+| `stg_customer_duplicate_groups` | Uma linha por cliente de origem pertencente a um grupo de duplicados: grupo, sobrevivente, semelhança do nome, atributos corroborantes, estado da decisão (`ACTIVE`, `DISMISSED`) e carga em que foi tomada |
 
-@@include ../mappings/source-to-staging.md from="## 9. Contrato físico" to="### 9.2" shift=0
+As colunas auxiliares calculam-se na Staging e não existem na origem: `frete_alocado` (linhas de fatura), `line_sum` e `header_line_difference` (faturas), `normalised_name`, `normalised_taxpayer`, `normalised_email` e `normalised_address` (clientes, apenas para comparação) e `classification_fallback` (produtos).
+
+### Tabelas e não ficheiros
+
+O enunciado pede as «estruturas de dados (tabelas; ficheiros)» da Staging. A Staging é composta apenas por tabelas: a origem e o Data Mart são bases SQL Server e a Staging fica no mesmo servidor do Data Mart, pelo que a extração, a validação e o carregamento fazem-se por tabelas, sem etapas intermédias em ficheiros. Não existem ficheiros de dados. O único ficheiro associado ao processo é o de parametrização do projeto SSIS, com os nomes dos servidores e das bases de dados e os caminhos, que o enunciado exige que não sejam absolutos.
+
+### Decisões de desenho
+
+- **Cópia sem conversão.** Os valores da origem são guardados com o mesmo tipo e sem transformação; um `NULL` continua `NULL`. As normalizações usam colunas auxiliares e o valor original nunca se perde.
+- **Histórico por carga.** A mesma chave de origem pode existir em cargas diferentes, mas não duas vezes na mesma (`UNIQUE (load_id, source_pk)`). O `raw_row_hash` permite reconhecer um registo já carregado e tornar a carga idempotente.
+- **JSON só nas rejeições.** As tabelas `stg_<origem>` já guardam todos os registos extraídos, com os valores de origem e o estado de validação. Uma cópia em JSON de todos os registos duplicaria o volume, que no sistema real é elevado, e manteria o estado de validação em dois sítios. O JSON usa-se apenas em `stg_rejections`, para conservar os valores originais de cada registo rejeitado.
+- **Decisão persistente nos duplicados.** A decisão de consolidar dois clientes fica gravada e só se desfaz por revisão explícita; recalculá-la em cada carga separaria um cliente absorvido do sobrevivente quando um atributo mudasse e partiria o histórico das faturas.
+- **Rejeição ao nível da fatura.** Uma rejeição por R06, R07 ou R11 marca a fatura inteira, porque o frete é alocado sobre o conjunto das linhas. Na amostra são rejeitadas 7 das 37 faturas (10,1 % do valor).
+- **Rejeitado não é eliminado.** Os registos rejeitados permanecem na Staging, com a regra e a mensagem, e não são carregados no Data Mart. A sua correção e posterior carga estão fora do âmbito do trabalho.
+
+### Colunas técnicas
+
+@@include ../mappings/source-to-staging.md from="## 9. Contrato físico" to="### 9.1" shift=0 drop_heading=1
+
+### Validação das estruturas
+
+As estruturas foram criadas e testadas em SQL Server (`mappings/03_ddl_staging_area.sql`, `05_ddl_staging_tabelas_tipadas.sql` e `06_testes_staging.sql`), numa base de dados descartável. Os 37 testes verificam a existência das tabelas, a igualdade de tipo, tamanho e nulabilidade de cada coluna de negócio face à origem (143 colunas), as colunas técnicas, as chaves e restrições e o comportamento com dados de teste (valores por omissão, duplicados, estados inválidos, rejeições e grupos de duplicados). Todos foram aprovados.
 
 # Mapeamentos
 
@@ -114,7 +140,6 @@ Para suportar a futura expansão para o Reino Unido, os valores monetários do f
 |---|---|
 | Sinal das 4 linhas de fatura com quantidade ou preço negativo | Rejeitadas até o negócio confirmar se são devoluções |
 | Significado de `payment_date` | Sempre preenchida; pode ser data de vencimento |
-| Tabelas tipadas `stg_<origem>` | Contrato definido; a criação física é feita na 2.ª parte |
 | Marca de classificação de produto vinda do *fallback* da família | A Staging deve registar a origem; o Data Mart não tem coluna para isso |
 | Fornecedor da linha | Reflete `products.supplyer` à data da carga; não é historiado |
 | Estações do ano | Usam datas fixas (20/03, 21/06, 23/09, 21/12) |
@@ -127,3 +152,5 @@ Para suportar a futura expansão para o Reino Unido, os valores monetários do f
 # Anexo B — Dicionário de dados e estratégias SCD
 
 @@include ../modelo-dimensional/02_modelo_dimensional_dicionario_scd.md from="## 3. Dicionário" to="## 6. Clientes" shift=0
+
+@@include anexo_c_staging.md shift=0

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 470" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#444"/></marker>
+  </defs>
+  <rect width="1100" height="470" fill="#ffffff"/>
+  <text x="550" y="28" text-anchor="middle" font-size="18" font-weight="700" fill="#222">Estruturas da Staging Area e circuito dos registos</text>
+
+  <!-- Origem -->
+  <rect x="20" y="60" width="210" height="300" rx="8" fill="#eef3f8" stroke="#2c6fa8" stroke-width="2"/>
+  <text x="125" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#1b4f7c">Sistema operacional</text>
+  <text x="125" y="108" text-anchor="middle" font-size="12" fill="#333">BD MoreRhythm (só leitura)</text>
+  <text x="125" y="146" text-anchor="middle" font-size="12" fill="#333">12 tabelas de negócio</text>
+  <text x="125" y="168" text-anchor="middle" font-size="12" fill="#333">customers · employees · zones</text>
+  <text x="125" y="186" text-anchor="middle" font-size="12" fill="#333">products · families · categories</text>
+  <text x="125" y="204" text-anchor="middle" font-size="12" fill="#333">suplliers · invoices</text>
+  <text x="125" y="222" text-anchor="middle" font-size="12" fill="#333">invoices_lines · purchases</text>
+  <text x="125" y="240" text-anchor="middle" font-size="12" fill="#333">purchases_lines</text>
+  <text x="125" y="258" text-anchor="middle" font-size="12" fill="#333">stocks_movements</text>
+
+  <!-- Staging -->
+  <rect x="290" y="60" width="400" height="300" rx="8" fill="#fff6e5" stroke="#c77700" stroke-width="2"/>
+  <text x="490" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#8a5200">Staging Area · BD MoreRhythm_STG · 15 tabelas</text>
+
+  <rect x="306" y="102" width="368" height="86" rx="5" fill="#fff" stroke="#c77700"/>
+  <text x="490" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#333">12 tabelas stg_&lt;origem&gt;</text>
+  <text x="490" y="144" text-anchor="middle" font-size="12" fill="#333">cópia 1:1 dos valores da origem + 9 colunas técnicas</text>
+  <text x="490" y="162" text-anchor="middle" font-size="12" fill="#333">validation_status: PENDING → VALID · CORRIGIDO · REJECTED</text>
+  <text x="490" y="180" text-anchor="middle" font-size="12" fill="#333">raw_row_hash · UNIQUE (load_id, source_pk)</text>
+
+  <rect x="306" y="212" width="368" height="46" rx="5" fill="#fff" stroke="#b3261e"/>
+  <text x="490" y="232" text-anchor="middle" font-size="13" font-weight="700" fill="#333">stg_rejections</text>
+  <text x="490" y="250" text-anchor="middle" font-size="12" fill="#333">regra violada + valores originais em JSON (só rejeitados)</text>
+
+  <rect x="306" y="270" width="368" height="46" rx="5" fill="#fff" stroke="#c77700"/>
+  <text x="490" y="290" text-anchor="middle" font-size="13" font-weight="700" fill="#333">stg_customer_duplicate_groups</text>
+  <text x="490" y="308" text-anchor="middle" font-size="12" fill="#333">cliente de origem → sobrevivente (R01), decisão persistente</text>
+
+  <rect x="306" y="326" width="368" height="26" rx="5" fill="#fff" stroke="#c77700"/>
+  <text x="490" y="344" text-anchor="middle" font-size="12" fill="#333"><tspan font-weight="700">stg_load_control</tspan> · load_id (FK em todas as tabelas)</text>
+
+  <!-- Data Mart -->
+  <rect x="790" y="60" width="290" height="300" rx="8" fill="#eaf6ee" stroke="#2e7d32" stroke-width="2"/>
+  <text x="935" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#1b5e20">Data Mart</text>
+  <text x="935" y="108" text-anchor="middle" font-size="12" fill="#333">BD MoreRhythm_DM</text>
+  <rect x="806" y="124" width="258" height="64" rx="5" fill="#fff" stroke="#2e7d32"/>
+  <text x="935" y="148" text-anchor="middle" font-size="12" fill="#333">Dim_Data · Dim_Produto · Dim_Fornecedor</text>
+  <text x="935" y="166" text-anchor="middle" font-size="12" fill="#333">Dim_Funcionario · Dim_Moeda</text>
+  <rect x="806" y="212" width="258" height="46" rx="5" fill="#fff" stroke="#2e7d32"/>
+  <text x="935" y="232" text-anchor="middle" font-size="12" fill="#333">Dim_Cliente (uma linha por cliente real)</text>
+  <text x="935" y="248" text-anchor="middle" font-size="12" fill="#333">BK = sobrevivente</text>
+  <rect x="806" y="270" width="258" height="46" rx="5" fill="#fff" stroke="#2e7d32"/>
+  <text x="935" y="290" text-anchor="middle" font-size="12" font-weight="700" fill="#333">Fact_Vendas</text>
+  <text x="935" y="306" text-anchor="middle" font-size="12" fill="#333">uma linha por linha de fatura</text>
+
+  <!-- Setas -->
+  <line x1="230" y1="145" x2="288" y2="145" stroke="#444" stroke-width="2" marker-end="url(#a)"/>
+  <text x="259" y="136" text-anchor="middle" font-size="11" fill="#444">extração</text>
+  <line x1="676" y1="145" x2="788" y2="145" stroke="#444" stroke-width="2" marker-end="url(#a)"/>
+  <text x="732" y="136" text-anchor="middle" font-size="11" fill="#444">VALID · CORRIGIDO</text>
+  <line x1="676" y1="293" x2="788" y2="236" stroke="#444" stroke-width="2" marker-end="url(#a)"/>
+  <text x="742" y="278" text-anchor="middle" font-size="11" fill="#444">mapa</text>
+  <path d="M490 188 L490 210" stroke="#b3261e" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="500" y="204" font-size="11" fill="#b3261e">REJECTED</text>
+
+  <text x="550" y="404" text-anchor="middle" font-size="12" fill="#444">Não há ficheiros de dados na Staging: as estruturas são tabelas SQL Server, no mesmo servidor do Data Mart.</text>
+  <text x="550" y="424" text-anchor="middle" font-size="12" fill="#444">Os registos rejeitados ficam na Staging e não são carregados no Data Mart; a sua correção está fora do âmbito do trabalho.</text>
+  <text x="550" y="444" text-anchor="middle" font-size="12" fill="#444">O único ficheiro associado é o de parametrização do projeto SSIS (servidores, bases de dados e caminhos).</text>
+</svg>
