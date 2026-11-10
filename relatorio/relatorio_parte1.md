@@ -98,6 +98,82 @@ O enunciado pede as «estruturas de dados (tabelas; ficheiros)» da Staging. A S
 
 As estruturas foram criadas e testadas em SQL Server (`mappings/03_ddl_staging_area.sql`, `05_ddl_staging_tabelas_tipadas.sql` e `06_testes_staging.sql`), numa base de dados descartável. Os 37 testes verificam a existência das tabelas, a igualdade de tipo, tamanho e nulabilidade de cada coluna de negócio face à origem (143 colunas), as colunas técnicas, as chaves e restrições e o comportamento com dados de teste (valores por omissão, duplicados, estados inválidos, rejeições e grupos de duplicados). Todos foram aprovados.
 
+# Processo ETL: extração, validação e deteção de duplicados
+
+Esta secção especifica a parte do processo que leva os dados da origem para a Staging e os deixa validados. O processo será implementado num *Integration Services Project* do Visual Studio; nada foi ainda construído, pelo que os nomes dos pacotes e a escolha dos componentes são a proposta para a 2.ª parte. A carga das dimensões e do facto está descrita na secção «Carga incremental».
+
+## Pacotes e ordem de execução
+
+| Ordem | Pacote (proposto) | Conteúdo | Depende de |
+|---|---|---|---|
+| 1 | `Mestre` | Abre o lote (`INSERT` em `stg_load_control`, estado `RUNNING`, guarda o `load_id` numa variável), chama os pacotes seguintes por ordem (*Execute Package Task*) e fecha o lote (`SUCCEEDED`) | — |
+| 2 | `Extracao` | 12 tarefas de fluxo de dados independentes, uma por tabela de origem, num *Sequence Container* | Lote aberto |
+| 3 | `Validacao` | Tarefas SQL em sequência: normalização, regras R05 a R11, frete alocado, rejeições | Extração completa |
+| 4 | `Duplicados` | Fluxo de dados com *Fuzzy Grouping* sobre os clientes ainda sem decisão e gravação em `stg_customer_duplicate_groups` | Validação (usa as colunas `normalised_*`) |
+
+As dimensões só carregam depois do pacote 4, porque a chave do cliente no Data Mart depende do mapa de duplicados.
+
+## Extração de cada tabela
+
+Cada fluxo de dados tem a mesma forma: *OLE DB Source* (consulta à origem) → *Derived Column* (`load_id`, `extraction_timestamp` e `source_pk`) → *Lookup* (último registo guardado em `stg_<origem>` com a mesma chave) → *Conditional Split* → *OLE DB Destination*.
+
+- **Quais os registos.** Nas tabelas com datas de auditoria fiáveis (`customers`, `employees`, `families`, `invoices`, `invoices_lines`, `purchases`, `purchases_lines`, `stocks_movements`) a consulta só devolve registos com `last_update` igual ou posterior à última atualização já guardada em lotes `SUCCEEDED`. O filtro é executado na origem, por isso só os registos novos ou alterados atravessam a rede. Em `zones` e `categories`, que não têm auditoria, e em `products` e `suplliers`, onde 8 de 67 e 8 de 14 registos têm `last_update` anterior à criação, lê-se a tabela inteira.
+- **Novo, alterado ou igual.** A consulta calcula o `raw_row_hash` (`HASHBYTES('SHA2_256', ...)` sobre os valores concatenados com `CONCAT` e separador, com `NULL` como texto vazio). O *Lookup* compara-o com o do último registo guardado: sem correspondência é novo, com *hash* diferente é alterado e com *hash* igual é descartado. O limite de `last_update` é inclusivo e o *hash* elimina o que já tinha sido lido, de modo que repetir uma carga não cria registos.
+- **Destino.** O *OLE DB Destination* em modo *fast load*. Os valores entram com o tipo da origem; não há conversões. O estado inicial é `PENDING`.
+
+## Validação e limpeza
+
+As regras aplicam-se em tarefas SQL sobre o lote inteiro, não registo a registo:
+
+1. **Normalização** (R02, R09): preencher as colunas `normalised_*` e tratar como ausente o valor vazio, só com espaços ou com formato inválido, nas colunas transformadas; o valor original fica na coluna copiada.
+2. **Linhas e faturas** (R05, R06, R07, R11): marcar a linha de compra sem produto; comparar `line_total` com `quantity × unit_price`; calcular `line_sum` e `header_line_difference`; comparar `final_total` com `products_total + shipping_cost + vat_value`. A tolerância monetária é 0,01. Uma violação de R06, R07 ou R11 marca a fatura inteira como `REJECTED`.
+3. **Integridade** (R08): validar as referências não nulas entre tabelas do lote.
+4. **Frete**: nas faturas não rejeitadas, `frete_alocado` é proporcional ao valor da linha, com o resto de arredondamento na última linha.
+5. **Estado**: os restantes registos passam a `VALID` ou `CORRIGIDO`; os rejeitados são copiados para `stg_rejections` com a regra, a mensagem e os valores originais em JSON (`FOR JSON PATH`).
+
+O tratamento de clientes sem zona e de produtos sem atributos (R03 e R04) segue a decisão indicada em «Decisões em aberto e limitações».
+
+## Deteção de duplicados de clientes (R01)
+
+O fluxo de dados lê os clientes do lote que ainda não têm decisão em `stg_customer_duplicate_groups`, juntamente com os sobreviventes `ACTIVE`, e passa o nome normalizado pelo componente *Fuzzy Grouping*, que agrupa por semelhança e devolve a chave do grupo e a pontuação. O componente só mede a semelhança do nome; o critério completo da regra R01 (pelo menos dois atributos corroborantes) aplica-se a seguir, numa tarefa SQL sobre os pares candidatos, que também escolhe o sobrevivente (atualização mais recente). Ficam gravados os grupos em que pelo menos um membro ainda não tinha decisão. O *Fuzzy Grouping* precisa de uma ligação a SQL Server para criar tabelas temporárias.
+
+A semelhança do *Fuzzy Grouping* não é a distância de Levenshtein usada no *profiling* (limiar 0,80). O limiar do componente tem de ser calibrado na 2.ª parte sobre os mesmos pares; o resultado esperado na amostra é o mesmo, três grupos com sobreviventes 18, 8 e 5.
+
+## Erros e rejeições
+
+- **Dados com problemas de qualidade:** rejeição lógica para `stg_rejections` (secção anterior); o registo fica na Staging e não segue para o Data Mart.
+- **Erros técnicos** (ligação, tipos, destino): as saídas de erro das origens e destinos falham o componente. Um manipulador de eventos `OnError` no pacote `Mestre` marca o lote `FAILED` com a mensagem de erro. Como o limite de extração só usa lotes `SUCCEEDED`, repetir a execução volta a ler o que ficou por carregar.
+- **Contagens:** componentes *Row Count* guardam em variáveis o número de registos extraídos, validados e rejeitados, que o pacote `Mestre` grava em `stg_load_control`.
+
+## Parâmetros
+
+Nenhum componente tem caminhos absolutos. As ligações são construídas por expressões a partir de parâmetros do projeto, guardados no ficheiro de parâmetros (`Project.params`):
+
+| Parâmetro | Conteúdo |
+|---|---|
+| `Origem_Servidor` | Servidor da base de dados do sistema operacional |
+| `Origem_BD` | Nome da base de dados do sistema operacional (`MoreRhythm`) |
+| `DW_Servidor` | Servidor do Data Mart e da Staging (o mesmo para ambos) |
+| `DM_BD` | Nome da base de dados do Data Mart (`MoreRhythm_DM`) |
+| `STG_BD` | Nome da base de dados da Staging (`MoreRhythm_STG`) |
+| `Tolerancia_Monetaria` | 0,01 |
+| `Limiar_Semelhanca_Nome` | Limiar do *Fuzzy Grouping* (a calibrar) |
+| `Min_Atributos_Corroborantes` | 2 |
+
+Os cinco primeiros são os que o enunciado exige; os restantes evitam valores fixos nas regras.
+
+## Medidas de eficiência
+
+- Só atravessam a rede os registos novos ou alterados nas oito tabelas com auditoria fiável; as consultas escolhem apenas as colunas necessárias e calculam o *hash* na origem.
+- Os 12 fluxos são independentes e correm em paralelo.
+- A extração não usa componentes bloqueantes (*Sort*, *Aggregate*). O *Lookup* usa cache total nas tabelas pequenas lidas por inteiro e cache parcial ou nenhuma nas grandes, em que só chegam poucos registos.
+- A validação é feita por instruções SQL sobre conjuntos e não por *OLE DB Command* registo a registo.
+- O destino usa *fast load*, com tamanho de confirmação ajustável ao volume real.
+- Cada tabela `stg_<origem>` tem índice na chave de negócio, que suporta a pesquisa do último registo.
+- O *Fuzzy Grouping*, que é caro, só processa os clientes sem decisão e não a tabela inteira.
+
+Não foram feitas medições de desempenho nesta fase: a amostra é pequena e o enunciado indica que o volume real é muito superior. As medições ficam para a 2.ª parte.
+
 # Mapeamentos
 
 ## Origem → Staging
