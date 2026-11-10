@@ -49,21 +49,23 @@ Os tipos identificados no inventário incluem `int`, `numeric`, `decimal`, `char
 
 Sempre que necessário para preservar valores originais ou identificar erros de conversão, poderão ser utilizadas colunas auxiliares de texto bruto ou mecanismos equivalentes de rejeição controlada. Esta decisão deverá ser confirmada na definição física da Staging Area.
 
-## 5. Colunas técnicas propostas
+## 5. Colunas técnicas
 
-Além das colunas de negócio provenientes da origem, propõe-se incluir os seguintes metadados técnicos:
+Além das colunas de negócio provenientes da origem, cada tabela `stg_<origem>` tem nove colunas técnicas, descritas no contrato físico do §9:
 
-| Coluna proposta | Finalidade |
+| Coluna | Finalidade |
 |---|---|
-| `source_table` | Identificar a tabela operacional de origem |
-| `extraction_timestamp` | Registar a data e hora da extração |
+| `stg_row_id` | Identificar a cópia na Staging |
 | `load_id` | Identificar a execução de carregamento |
+| `source_table` | Identificar a tabela operacional de origem |
+| `source_pk` | Chave primária da origem, serializada |
+| `extraction_timestamp` | Registar a data e hora da extração |
 | `validation_status` | Registar o resultado da validação do registo |
+| `validation_rule` | Identificar a regra (R01 a R11) aplicada ao registo |
 | `validation_message` | Descrever erros ou problemas detetados |
+| `raw_row_hash` | Detetar registos já carregados (idempotência) |
 
-Estas colunas são uma proposta de desenho e deverão ser confirmadas antes da implementação física.
-
-O estado de validação deverá distinguir, pelo menos, registos válidos, registos com problemas corrigíveis e registos com problemas que impedem o carregamento para o Data Warehouse.
+O estado de validação distingue registos válidos (`VALID`), com problema corrigido automaticamente (`CORRIGIDO`), por validar (`PENDING`) e rejeitados (`REJECTED`). Só os dois primeiros seguem para o Data Warehouse.
 
 ## 6. Regras gerais de mapeamento
 
@@ -95,9 +97,9 @@ Todos os registos são extraídos e preservados na Staging. Cada grupo é consol
 
 ### 7.3. Inconsistências financeiras
 
-Foram identificadas quatro linhas de faturas em que o valor registado não coincide com o produto da quantidade pelo preço unitário, assim como duas situações de divergência entre os totais dos cabeçalhos das faturas e os valores agregados das respetivas linhas.
+Foram identificadas quatro linhas de faturas em que o valor registado não coincide com o produto da quantidade pelo preço unitário (R06), duas faturas em que o total de produtos do cabeçalho difere da soma das linhas (R07) e duas faturas em que o total final não coincide com a soma de produtos, frete e IVA (R11).
 
-Estas situações deverão ser sinalizadas para análise. Não se deverá assumir automaticamente que o valor calculado é o correto, uma vez que a origem poderá incluir notas de crédito, devoluções ou outras convenções de negócio que necessitam de confirmação.
+A origem não permite confirmar se os sinais negativos correspondem a notas de crédito ou devoluções, nem qual dos valores é o correto nas faturas divergentes. Como o enunciado exclui do Data Mart o que não pode ser corrigido automaticamente, as faturas afetadas (7 de 37, 10,1 % do valor) ficam rejeitadas na Staging, com os valores originais em `stg_rejections` (ver §9.1).
 
 ### 7.4. Valores em falta
 

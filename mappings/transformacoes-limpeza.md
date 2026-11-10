@@ -133,13 +133,13 @@ As regras desta especificação são aplicadas pela ordem seguinte:
 1. Extrair o valor original e os metadados técnicos para a Staging Area.
 2. Normalizar apenas cópias de comparação e calcular os indicadores de validação.
 3. Aplicar as correções determinísticas permitidas.
-4. Classificar cada registo como `VALID`, `CORRIGIDO`, `PENDENTE` ou `REJEITADO`.
+4. Classificar cada registo como `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED`.
 5. Carregar para o Data Mart apenas registos `VALID` ou `CORRIGIDO`.
 
 Ficam fechadas as seguintes decisões para a Fase 1:
 
 - **Clientes duplicados:** os pares 10 e 18, 8 e 22 e 5 e 26 são consolidados no sobrevivente (§4), com mapeamento origem → sobrevivente em `stg_customer_duplicate_groups`. Os identificadores originais não se perdem; a origem não é alterada.
-- **Quantidades e preços negativos:** não são convertidos para valores absolutos nem reinterpretados como devoluções. As quatro linhas financeiras e as respetivas faturas são `REJEITADO` até existir confirmação da semântica.
+- **Quantidades e preços negativos:** não são convertidos para valores absolutos nem reinterpretados como devoluções. As quatro linhas financeiras e as respetivas faturas ficam `REJECTED` até existir confirmação da semântica.
 - **Divergências de cabeçalho:** as duas faturas com diferença entre o total de produtos e a soma das linhas são rejeitadas integralmente. A rejeição ao nível da fatura preserva a reconciliação do frete alocado.
 - **Produto desconhecido em compras:** as 12 linhas ficam em `stg_rejections` com os valores originais; não entram no Data Mart de vendas.
 - **Membro desconhecido:** só é usado para atributos descritivos ausentes que não impedem a identificação do facto, por exemplo fornecedor, zona ou contacto. Nunca substitui uma referência de produto, cliente, documento, quantidade, preço ou total inválida.
