@@ -100,7 +100,7 @@ As estruturas foram criadas e testadas em SQL Server (`mappings/03_ddl_staging_a
 
 # Processo ETL: extração, validação e deteção de duplicados
 
-Esta secção especifica a parte do processo que leva os dados da origem para a Staging e os deixa validados. O processo será implementado num *Integration Services Project* do Visual Studio; nada foi ainda construído, pelo que os nomes dos pacotes e a escolha dos componentes são a proposta para a 2.ª parte. A carga das dimensões e do facto está descrita na secção «Carga incremental».
+Esta secção especifica a parte do processo que leva os dados da origem para a Staging e os deixa validados. O processo será implementado num *Integration Services Project* do Visual Studio; nada foi ainda construído, pelo que os nomes dos pacotes e a escolha dos componentes são a proposta para a 2.ª parte. A carga das dimensões e do facto está descrita na secção seguinte, «Processo ETL: carga do Data Mart».
 
 ## Pacotes e ordem de execução
 
@@ -174,6 +174,10 @@ Os cinco primeiros são os que o enunciado exige; os restantes evitam valores fi
 
 Não foram feitas medições de desempenho nesta fase: a amostra é pequena e o enunciado indica que o volume real é muito superior. As medições ficam para a 2.ª parte.
 
+# Processo ETL: carga do Data Mart
+
+@@include secao_carga_etl.md shift=0
+
 # Mapeamentos
 
 ## Origem → Staging
@@ -198,13 +202,11 @@ Os registos são classificados como correção automática segura, atributo opci
 
 # Carga incremental
 
-O enunciado exige que cada execução carregue só os dados novos e atualize os que mudaram.
+O enunciado exige que cada execução carregue só os dados novos e atualize os que mudaram. A estratégia tem duas fases, descritas nas duas secções anteriores:
 
-- **Deteção de registos novos ou alterados:** as tabelas de negócio (exceto `zones` e `categories`, que não têm colunas de auditoria e são minúsculas) têm `create_*` e `last_update_*`. Cada extração lê os registos com `last_update` posterior à última carga bem-sucedida registada em `stg_load_control`. `zones` e `categories` são lidas por inteiro e comparadas por *hash*.
-- **Idempotência:** `source_table + source_pk` identifica o registo lógico e `raw_row_hash` o seu conteúdo. Repetir um lote não cria nem altera nada.
-- **Dimensões:** a comparação do `Hash_SCD1` e do `Hash_SCD2` com a versão corrente decide entre ignorar, atualizar (tipo 1) ou abrir uma nova versão (tipo 2).
-- **Facto:** *upsert* por `BK_Linha_Fatura`. O `Hash_Linha` combina os *hashes* da linha e do cabeçalho da fatura, porque uma alteração ao custo de expedição no cabeçalho muda a alocação de todas as linhas sem alterar as linhas.
-- **Limitação:** a origem não marca eliminações, pelo que os registos apagados na origem não são detetados.
+- **Extração (Staging).** Nas tabelas com datas de auditoria fiáveis, só se leem os registos com `last_update` igual ou posterior ao último lote bem-sucedido; nas restantes, lê-se tudo. Em todas, o *hash* da linha (`raw_row_hash`) decide se um registo é novo, alterado ou igual, de modo que repetir uma carga não cria registos.
+- **Carga (Data Mart).** Nas dimensões, o `Hash_SCD1` e o `Hash_SCD2` decidem entre ignorar, atualizar (tipo 1) ou abrir uma nova versão (tipo 2). No facto, o *upsert* por `BK_Linha_Fatura` só reaplica as linhas cujo `Hash_Linha` mudou; este *hash* inclui o cabeçalho da fatura, porque uma alteração ao frete muda a alocação de todas as linhas.
+- **Limitação.** A origem não marca eliminações, pelo que os registos apagados na origem não são detetados.
 
 # Uniformização monetária em euros
 
