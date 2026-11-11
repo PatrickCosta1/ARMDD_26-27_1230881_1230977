@@ -100,7 +100,7 @@ As estruturas foram criadas e testadas em SQL Server (`mappings/03_ddl_staging_a
 
 # Processo ETL: extração, validação e deteção de duplicados
 
-Esta secção especifica a parte do processo que leva os dados da origem para a Staging e os deixa validados. O processo será implementado num *Integration Services Project* do Visual Studio; nada foi ainda construído, pelo que os nomes dos pacotes e a escolha dos componentes são a proposta para a 2.ª parte. A carga das dimensões e do facto está descrita na secção «Carga incremental».
+Esta secção especifica a parte do processo que leva os dados da origem para a Staging e os deixa validados. O processo será implementado num *Integration Services Project* do Visual Studio; nada foi ainda construído, pelo que os nomes dos pacotes e a escolha dos componentes são a proposta para a 2.ª parte. A carga das dimensões e do facto está descrita na secção seguinte, «Processo ETL: carga do Data Mart».
 
 ## Pacotes e ordem de execução
 
@@ -174,6 +174,10 @@ Os cinco primeiros são os que o enunciado exige; os restantes evitam valores fi
 
 Não foram feitas medições de desempenho nesta fase: a amostra é pequena e o enunciado indica que o volume real é muito superior. As medições ficam para a 2.ª parte.
 
+# Processo ETL: carga do Data Mart
+
+@@include secao_carga_etl.md shift=0
+
 # Mapeamentos
 
 ## Origem → Staging
@@ -184,7 +188,11 @@ A cópia é 1:1: cada tabela de origem tem a sua `stg_<origem>`, com as mesmas c
 
 ## Staging → Data Mart
 
-O mapeamento seguinte indica, para cada atributo do Data Mart, a origem, as transformações e a estratégia SCD.
+A Staging Area guarda uma cópia fiel e rastreável dos registos extraídos da origem, valida-os e isola os que têm problemas de qualidade. O data mart recebe apenas os registos válidos ou corrigidos automaticamente. O mapeamento descreve, para cada atributo do data mart, de onde vem, que transformação sofre e qual é a sua estratégia SCD; as tabelas atributo a atributo seguem-se a esta apresentação.
+
+**Dimensões.** Em geral, as transformações de limpeza são aplicadas só à cópia usada no carregamento, e o valor original permanece na Staging. Os textos são aparados e os vazios passam a nulo. O NIF vazio ou composto só por zeros passa a "N/D" e fica fora da deteção de duplicados (quatro clientes na amostra). A zona do cliente vem da tabela de zonas e o país deriva dela (Espanha, ou Portugal para as restantes). O vendedor atribuído é o nome do funcionário correspondente, e o valor zero na origem significa "sem vendedor". Para o produto, a família, a categoria e a classificação vêm das tabelas respetivas; quando o produto não tem classificação própria, usa-se a da família, e esse recurso fica assinalado na Staging. No fornecedor e no funcionário aplicam-se as mesmas regras de limpeza; o chefe do funcionário traz o nome do chefe, e a direção, sem chefe, fica a nulo. Na dimensão do cliente só entram os sobreviventes do mapa de duplicados, com os atributos consolidados do grupo.
+
+**Tabela de factos.** Cada linha de fatura origina uma linha do facto. Para as chaves das dimensões, o carregamento pesquisa a versão vigente à data da fatura: o cliente passa primeiro pelo mapa de duplicados, o fornecedor vem do produto vendido (ou do membro "Sem fornecedor" quando o produto não tem fornecedor) e a moeda `EURO` da origem corresponde a `EUR`. A quantidade, o preço, o total e o IVA da linha copiam-se sem alterar o sinal. O frete é o valor já alocado na Staging, e os valores em euros resultam de multiplicar pela taxa do dia da fatura, com seis casas decimais. A data de última atualização é a mais recente entre a linha e o cabeçalho, e o *hash* da linha combina os da linha e do cabeçalho, porque uma alteração ao frete no cabeçalho muda a alocação de todas as linhas sem alterar as linhas. A ligação ao lote de carga permite saber que execução inseriu ou atualizou cada linha. Só entram faturas sem as três inconsistências descritas acima.
 
 @@include ../mappings/04_mapeamento_staging_datamart.md shift=1
 
@@ -198,28 +206,50 @@ Os registos são classificados como correção automática segura, atributo opci
 
 # Carga incremental
 
-O enunciado exige que cada execução carregue só os dados novos e atualize os que mudaram.
+O enunciado exige que cada execução carregue só os dados novos e atualize os que mudaram. A estratégia tem duas fases, descritas nas duas secções anteriores:
 
-- **Deteção de registos novos ou alterados:** as tabelas de negócio (exceto `zones` e `categories`, que não têm colunas de auditoria e são minúsculas) têm `create_*` e `last_update_*`. Cada extração lê os registos com `last_update` posterior à última carga bem-sucedida registada em `stg_load_control`. `zones` e `categories` são lidas por inteiro e comparadas por *hash*.
-- **Idempotência:** `source_table + source_pk` identifica o registo lógico e `raw_row_hash` o seu conteúdo. Repetir um lote não cria nem altera nada.
-- **Dimensões:** a comparação do `Hash_SCD1` e do `Hash_SCD2` com a versão corrente decide entre ignorar, atualizar (tipo 1) ou abrir uma nova versão (tipo 2).
-- **Facto:** *upsert* por `BK_Linha_Fatura`. O `Hash_Linha` combina os *hashes* da linha e do cabeçalho da fatura, porque uma alteração ao custo de expedição no cabeçalho muda a alocação de todas as linhas sem alterar as linhas.
-- **Limitação:** a origem não marca eliminações, pelo que os registos apagados na origem não são detetados.
+- **Extração (Staging).** Nas tabelas com datas de auditoria fiáveis, só se leem os registos com `last_update` igual ou posterior ao último lote bem-sucedido; nas restantes, lê-se tudo. Em todas, o *hash* da linha (`raw_row_hash`) decide se um registo é novo, alterado ou igual, de modo que repetir uma carga não cria registos.
+- **Carga (Data Mart).** Nas dimensões, o `Hash_SCD1` e o `Hash_SCD2` decidem entre ignorar, atualizar (tipo 1) ou abrir uma nova versão (tipo 2). No facto, o *upsert* por `BK_Linha_Fatura` só reaplica as linhas cujo `Hash_Linha` mudou; este *hash* inclui o cabeçalho da fatura, porque uma alteração ao frete muda a alocação de todas as linhas.
+- **Limitação.** A origem não marca eliminações, pelo que os registos apagados na origem não são detetados.
 
 # Uniformização monetária em euros
 
-Para suportar a futura expansão para o Reino Unido, os valores monetários do facto são guardados na moeda original e em euros, juntamente com a taxa de câmbio aplicada. A taxa é a da moeda no dia da fatura (`Dim_Taxa_Cambio`, uma linha por moeda e dia); para euros é 1. Na amostra só existe a moeda `EURO` (mapeada para `EUR`); a estrutura e a moeda `GBP` já estão previstas. Sem taxa aplicável, o registo é rejeitado em vez de se usar a taxa do dia anterior. O facto tem uma chave estrangeira composta para as taxas, pelo que a base de dados impede essa situação.
+O enunciado prevê que a empresa expanda a sua atividade para outros países da União Europeia e abra uma sucursal no Reino Unido, pelo que o data mart tem de permitir analisar vendas em moedas diferentes, usando o euro como moeda de uniformização. Os valores monetários do facto são guardados na moeda original e em euros, juntamente com a taxa de câmbio aplicada, o que mantém a rastreabilidade do valor original e permite agregar em euros sem recalcular. A taxa é a da moeda no dia da fatura e está numa tabela com uma linha por moeda e dia; para o euro a taxa é 1.
+
+Na amostra só existe a moeda `EURO`, mapeada para `EUR`. A estrutura e a moeda `GBP` já estão previstas, pelo que a sucursal do Reino Unido não obriga a alterar o modelo, mas nesta fase só se implementa o euro: a carga de cotações de outras moedas, e a regra para os dias sem cotação, ficam como extensão futura. Se não existir taxa para a moeda e o dia de uma fatura, o registo é rejeitado, em vez de se usar a taxa do dia anterior; a própria base de dados impõe esta regra, através de uma chave estrangeira composta do facto para a tabela de taxas.
+
+---
 
 # Decisões em aberto e limitações
 
-| Ponto | Situação |
-|---|---|
-| Sinal das 4 linhas de fatura com quantidade ou preço negativo | Rejeitadas até o negócio confirmar se são devoluções |
-| Significado de `payment_date` | Sempre preenchida; pode ser data de vencimento |
-| Marca de classificação de produto vinda do *fallback* da família | A Staging deve registar a origem; o Data Mart não tem coluna para isso |
-| Fornecedor da linha | Reflete `products.supplyer` à data da carga; não é historiado |
-| Estações do ano | Usam datas fixas (20/03, 21/06, 23/09, 21/12) |
-| Eliminações na origem | Não são detetadas |
+## Decisões ainda por fechar
+
+| Ponto | Hipótese assumida | Alternativa |
+|---|---|---|
+| Linhas de fatura com sinal negativo (4) | A fatura é rejeitada até o negócio confirmar a regra | Carregar como devoluções |
+| Significado de `payment_date` | É sempre preenchida e posterior à fatura, pelo que pode ser uma data de vencimento | Data de pagamento |
+| `shipping_cost` das 2 faturas com total incoerente | A fatura é rejeitada, porque não se sabe qual dos dois fretes é o efetivo | Carregar com o valor do cabeçalho |
+| Clientes sem zona e produtos sem atributos | Decidido: rejeitar; na amostra não afeta nenhuma fatura (clientes 2 e 20; produtos Z001 e CORSR) | Carregar como "Desconhecida" |
+| Origem das taxas de câmbio | Decidido: só euros nesta fase; GBP e ficheiro de cotações como extensão | Implementar já as cotações |
+| Fornecedores 8 e 14, com o mesmo NIF | Estabelecimentos distintos, não consolidados | Fundir |
+
+## Expansão e IVA por país
+
+**[CONFIRMAR: toda esta secção é raciocínio meu sobre o modelo; não é decisão do grupo nem está no repositório. Discutam e adaptem]**
+
+A sucursal no Reino Unido pode exigir mais do que moeda. Hoje o país do cliente deriva da zona, o que basta para analisar as vendas por país. Se as vendas da sucursal forem emitidas por uma entidade diferente, justifica-se uma dimensão própria de sucursal; enquanto a empresa fatura a partir de uma única entidade, o país e a moeda chegam. O IVA também varia por país. Hoje a taxa é um atributo do produto, com histórico, o que é suficiente com uma única taxa. Com vários países a taxa passa a depender do produto e do país. No entanto, as análises não dependem dela, porque o facto guarda o IVA efetivamente faturado em cada linha; a taxa só seria necessária para validar esses valores.
+
+## Clientes internos e funcionários
+
+A amostra tem três clientes do tipo "Interno" (a própria empresa e as suas filiais), sem qualquer fatura, e um do tipo "Funcionário", com uma fatura de 971,37. Os internos não afetam as análises. O cliente funcionário é uma venda real, por isso entra no data mart, e o tipo de cliente permite excluí-lo de uma análise de vendas a clientes externos, se a gestão o pretender.
+
+## Limitações conhecidas
+
+- As estações do ano usam datas fixas (20/03, 21/06, 23/09 e 21/12); os equinócios e solstícios reais variam um dia entre anos, sem efeito nas análises pedidas. **[CONFIRMAR: a afirmação de que a diferença não afeta as análises é minha; confirmar com as datas reais de 2025]**
+- A origem não regista eliminações, pelo que os registos apagados na origem não são detetados.
+- Um duplicado detetado depois de os dois clientes já estarem carregados exige reapontar as faturas já carregadas; o cliente de origem guardado no facto permite fazê-lo, e fica especificado, mas não é implementado nesta fase.
+- O fornecedor da linha de fatura reflete o produto na altura da carga e não é historiado.
+- A origem não guarda os valores antigos dos atributos; o histórico das dimensões começa na primeira carga.
 
 # Anexo A — Matriz de requisitos analíticos
 
