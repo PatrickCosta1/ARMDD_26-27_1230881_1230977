@@ -24,8 +24,8 @@
   <text x="435" y="98" text-anchor="middle" font-size="14" font-weight="700" fill="#8a5200">2. Staging Area</text>
   <text x="435" y="118" text-anchor="middle" font-size="12" fill="#333">BD MoreRhythm_STG</text>
   <rect x="316" y="132" width="238" height="40" rx="5" fill="#fff" stroke="#c77700"/>
-  <text x="435" y="150" text-anchor="middle" font-size="12" font-weight="600" fill="#333">stg_raw_rows + stg_&lt;origem&gt;</text>
-  <text x="435" y="165" text-anchor="middle" font-size="11" fill="#555">cópia fiel, hash, estado de validação</text>
+  <text x="435" y="150" text-anchor="middle" font-size="12" font-weight="600" fill="#333">12 tabelas stg_&lt;origem&gt;</text>
+  <text x="435" y="165" text-anchor="middle" font-size="11" fill="#555">cópia 1:1, hash, estado de validação</text>
   <rect x="316" y="180" width="238" height="40" rx="5" fill="#fff" stroke="#c77700"/>
   <text x="435" y="198" text-anchor="middle" font-size="12" font-weight="600" fill="#333">stg_load_control</text>
   <text x="435" y="213" text-anchor="middle" font-size="11" fill="#555">lote, contagens, estado, erros</text>
@@ -34,7 +34,7 @@
   <text x="435" y="261" text-anchor="middle" font-size="11" fill="#555">registos não corrigíveis, regra e motivo</text>
   <rect x="316" y="276" width="238" height="40" rx="5" fill="#fff" stroke="#c77700"/>
   <text x="435" y="294" text-anchor="middle" font-size="12" font-weight="600" fill="#333">stg_customer_duplicate_groups</text>
-  <text x="435" y="309" text-anchor="middle" font-size="11" fill="#555">potenciais duplicados em revisão</text>
+  <text x="435" y="309" text-anchor="middle" font-size="11" fill="#555">clientes duplicados → sobrevivente</text>
   <text x="435" y="346" text-anchor="middle" font-size="11" fill="#555">validação, normalização, frete alocado</text>
 
   <!-- Data Mart -->
@@ -82,6 +82,6 @@
   <path d="M435 370 L435 392" stroke="#b3261e" stroke-width="1.5" fill="none"/>
   <text x="550" y="388" text-anchor="start" font-size="11" fill="#b3261e">Registos rejeitados ficam na Staging (fora do Data Mart)</text>
 
-  <text x="20" y="500" font-size="12" fill="#444">Fluxo: a origem nunca é alterada; cada registo é copiado para a Staging com o lote e o hash, validado (regras R01–R10),</text>
+  <text x="20" y="500" font-size="12" fill="#444">Fluxo: a origem nunca é alterada; cada registo é copiado para a Staging com o lote e o hash, validado (regras R01 a R11),</text>
   <text x="20" y="518" font-size="12" fill="#444">e só os registos VALID ou CORRIGIDO seguem para o Data Mart, de forma incremental. Os restantes ficam em stg_rejections.</text>
 </svg>

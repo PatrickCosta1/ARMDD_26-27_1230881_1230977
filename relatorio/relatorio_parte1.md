@@ -1,50 +1,100 @@
 # Introdução
 
-Este relatório documenta a 1.ª parte do trabalho prático de Armazéns de Dados: o desenho de um *data mart* de vendas para a More Rhythm, SA, empresa sediada no Porto que distribui instrumentos musicais em Portugal e, pontualmente, em Espanha. A gestão quer analisar historicamente as vendas (faturação) a clientes, ao nível de detalhe mais elementar.
+O trabalho consiste em desenvolver um *data mart* com as vendas (faturação) da More Rhythm, SA, empresa sediada no Porto que distribui instrumentos musicais em Portugal e, pontualmente, em Espanha. A gestão quer analisar historicamente as vendas feitas a clientes, e o enunciado pede que o *data mart* permita fazê-lo ao nível de detalhe mais elementar. Este relatório corresponde à 1.ª parte e reúne o que o enunciado lhe atribui: a arquitetura do armazém de dados, o modelo dimensional com os atributos e tipos de dados de cada dimensão e da tabela de factos, as estruturas de dados da *staging area*, os mapeamentos entre a origem e a *staging area* e entre esta e o armazém de dados (com a estratégia de *Slowly Changing Dimension* de cada atributo) e as operações de transformação e limpeza.
 
-O relatório apresenta a arquitetura do armazém de dados, o resultado do *Data Profiling* à base de dados operacional, o modelo dimensional (metodologia de Kimball) com os respetivos atributos e tipos de dados, as estruturas da *Staging Area*, os mapeamentos origem → Staging e Staging → Data Mart (com a estratégia de *Slowly Changing Dimension* de cada atributo) e as regras de transformação e limpeza.
+Os dados disponíveis são uma amostra da base `MoreRhythm`: 12 tabelas de negócio com 1 057 registos, dos quais 37 faturas e 93 linhas de fatura, emitidas entre 31/01/2025 e 01/05/2025. O enunciado indica que o volume real é muito superior e que a amostra é representativa. Como a amostra termina em maio, algumas das análises pedidas (a da primavera e as do 2.º trimestre, por exemplo) só têm dados de parte do período; isso resulta da amostra e não do modelo.
 
-Os dados disponibilizados são uma amostra da base `MoreRhythm`: 12 tabelas de negócio e 1 057 registos, dos quais 37 faturas e 93 linhas de fatura, com datas entre 31/01/2025 e 01/05/2025. Algumas análises do enunciado (por exemplo a da primavera e a do 2.º trimestre) devolvem por isso poucos dados; isso não é um erro do modelo.
+**Estado do trabalho.** Fizeram-se o *profiling* da origem, o desenho do modelo dimensional e da *staging area*, os mapeamentos e as regras de limpeza, e escreveram-se em SQL Server e testaram-se as estruturas físicas do *data mart* e da *staging area*. O processo ETL no *Integration Services Project*, as consultas e as 20 análises em Power BI pertencem à 2.ª parte; por isso as secções sobre o ETL descrevem o que se pretende construir (pacotes, componentes, parâmetros) e não um processo já executado.
+
+O relatório começa pela arquitetura e pelo *profiling* da origem, que fundamentam as decisões seguintes; segue-se o modelo dimensional, a *staging area* e a especificação do ETL (extração e carga), e depois os mapeamentos, as regras de limpeza, a carga incremental, a uniformização monetária e as decisões em aberto. Os anexos contêm a matriz de requisitos analíticos (A), o dicionário de dados com as estratégias SCD (B) e as estruturas da *staging area* (C). As regras de transformação e limpeza têm os identificadores R01 a R11. Todo o material de apoio (*scripts*, documentos de trabalho e resultados) está no repositório do projeto.
 
 # Arquitetura do armazém de dados
 
 ![Arquitetura do armazém de dados](diagrama_arquitetura.svg)
 
-A arquitetura tem quatro camadas, ligadas por um processo ETL implementado num *Integration Services Project* do Visual Studio.
+A arquitetura tem quatro camadas, ligadas por um processo ETL implementado num *Integration Services Project* do Visual Studio. A separação entre a *staging area* e o *data mart* segue a organização habitual do método de Kimball, em que os dados são preparados numa área própria antes de serem publicados no esquema dimensional. Neste trabalho a *staging area* tem ainda uma função que o enunciado impõe: guardar os registos com problemas de qualidade que não se corrigem automaticamente, que ficam fora do *data mart*.
 
 | Camada | Base de dados | Função |
 |---|---|---|
 | Sistema operacional | `MoreRhythm` | Origem dos dados. É apenas lida; o processo nunca a altera |
-| Staging Area | `MoreRhythm_STG` | Guarda uma cópia fiel e rastreável dos registos extraídos, valida-os, normaliza-os e isola os que têm problemas de qualidade |
+| Staging Area | `MoreRhythm_STG` | Copia os registos extraídos, valida-os, normaliza-os, consolida os clientes duplicados e isola os registos com problemas de qualidade |
 | Data Mart | `MoreRhythm_DM` | Esquema em estrela com uma tabela de factos e as dimensões, pronto para consulta |
 | Análise | Power BI | As 20 análises multidimensionais pedidas |
 
-**Fluxo.**
+A *staging area* e o *data mart* ficam no mesmo servidor, em duas bases de dados, como o enunciado indica.
 
-1. **Extração:** cada tabela de origem é copiada para a Staging, com o identificador do lote (`load_id`), a data da extração e um *hash* do registo. A extração é incremental sempre que a tabela tem colunas de auditoria (ver secção "Carga incremental").
-2. **Validação e limpeza:** aplicam-se as regras R01 a R11. Cada registo fica `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED`. A normalização é feita em cópias de comparação; o valor original nunca se perde.
-3. **Rejeição:** os registos que não podem ser corrigidos automaticamente ficam em `stg_rejections`, com a regra violada e o motivo, e **não** são carregados no Data Mart, como o enunciado exige.
-4. **Carregamento:** as dimensões carregam antes do facto. Só entram registos `VALID` ou `CORRIGIDO`. O carregamento é incremental e idempotente.
-5. **Frete e moeda:** o frete (que na origem está ao nível da fatura) é repartido pelas linhas e os valores são convertidos para euros durante a transformação.
+**Fluxo de um lote de carga.**
 
-**Parametrização.** O projeto SSIS não tem caminhos absolutos. O nome do servidor e da base de dados do sistema operacional, o servidor do Data Mart e da Staging (o mesmo para ambas) e os nomes das bases de dados do Data Mart e da Staging vêm de um ficheiro de parâmetros.
+1. **Extração:** cada tabela de origem é copiada para a *staging area* com o identificador do lote (`load_id`), o instante da extração e um *hash* do registo. Onde as colunas de auditoria da origem são fiáveis, só se leem os registos novos ou alterados; nas restantes lê-se a tabela inteira e o *hash* distingue o que mudou (secções «Processo ETL» e «Carga incremental»).
+2. **Validação e limpeza:** aplicam-se as regras R01 a R11. Cada registo fica `VALID`, `CORRIGIDO`, `PENDING` ou `REJECTED`. A normalização é feita em cópias de comparação e o valor original nunca se perde.
+3. **Rejeição:** os registos que não podem ser corrigidos automaticamente ficam em `stg_rejections`, com a regra violada, o motivo e os valores originais, e não são carregados no *data mart*, como o enunciado exige. Uma fatura com uma linha ou um total incoerente é rejeitada por inteiro.
+4. **Duplicados:** os clientes duplicados, iguais ou aproximadamente iguais, são consolidados num sobrevivente, e o mapa fica guardado na *staging area*.
+5. **Carga do *data mart*:** as dimensões carregam antes do facto, e só entram registos `VALID` ou `CORRIGIDO`. A carga é incremental e idempotente.
+6. **Frete e moeda:** o frete, que na origem está ao nível da fatura, é repartido pelas linhas durante a validação, e os valores são convertidos para euros na transformação.
+
+**Parametrização.** O projeto SSIS não tem caminhos absolutos. O servidor e a base de dados do sistema operacional, o servidor do *data mart* e da *staging area* (o mesmo para ambas) e os nomes das bases de dados do *data mart* e da *staging area* vêm de um ficheiro de parâmetros, como o enunciado exige; a lista completa está na secção «Processo ETL: extração, validação e deteção de duplicados».
 
 # Data Profiling
 
-O *profiling* foi feito com seis *scripts* SQL sobre a `MoreRhythm` (inventário, chaves, valores em falta, duplicados de clientes, inconsistências financeiras e integridade referencial). A origem declara 16 chaves estrangeiras e os testes de integridade referencial não encontraram registos órfãos. Os problemas de completude e de consistência estão resumidos abaixo.
+O *profiling* foi feito sobre a `MoreRhythm` com sete *scripts* SQL (inventário, chaves e relações, valores em falta, duplicados de clientes, inconsistências financeiras, integridade referencial, e validação de domínio com duplicados aproximados). Todas as consultas são de leitura. O resultado detalhado e os *scripts* estão em `data-profiling/`.
+
+## Modelo relacional da origem
+
+A origem tem 12 tabelas de negócio e 16 chaves estrangeiras declaradas, que coincidem com as do diagrama do enunciado.
+
+| Tabela | Registos | Referências (chave estrangeira) |
+|---|---:|---|
+| `zones` | 5 | — |
+| `categories` | 11 | — |
+| `families` | 17 | — |
+| `employees` | 6 | `chief` → `employees` |
+| `suplliers` | 14 | `zone` → `zones` |
+| `customers` | 26 | `zone` → `zones` |
+| `products` | 67 | `category` → `categories`; `family` → `families`; `supplyer` → `suplliers` |
+| `invoices` | 37 | `customer` → `customers`; `employee` → `employees` |
+| `invoices_lines` | 93 | `invoice_stamp_id` → `invoices`; `product` → `products` |
+| `purchases` | 18 | `supplier` → `suplliers`; `employee` → `employees`; `zone` → `zones` |
+| `purchases_lines` | 77 | `purchase_stamp` → `purchases`; `product` → `products` |
+| `stocks_movements` | 686 | `product` → `products` |
+
+Existe ainda uma relação não declarada, `customers.seller` → `employees`, sem registos órfãos. Os testes de integridade referencial não encontraram registos sem correspondência. Tanto a venda como a compra têm o valor ao nível da fatura (cabeçalho) e da linha, e o custo de expedição das vendas (`shipping_cost`) está só no cabeçalho, o que obriga a alocá-lo às linhas.
+
+## Problemas encontrados
 
 | Problema | Evidência | Tratamento |
 |---|---|---|
-| NIF de cliente não identificativo | 4 clientes: vazio, `0`, `00` e `000000000` | `N/D`; fora da deteção de duplicados |
+| Clientes duplicados | 3 pares: 10 e 18 (iguais), 8 e 22 e 5 e 26 (aproximados); 9 de 37 faturas, 12 831,12 (26,0 % do valor) | Consolidados no sobrevivente (R01) |
+| NIF de cliente não identificativo | 4 clientes: vazio, `0`, `00` e `000000000` | `N/D`; fora da deteção de duplicados (R02) |
 | Zona de cliente em falta | 2 clientes (2 e 20) | Não se infere: o cliente é rejeitado (R03); nenhuma fatura é afetada |
-| Email e telemóvel em falta | 12 e 21 clientes | Mantêm-se `NULL` |
 | Atributos de produto em falta | 2 produtos sem designação, família nem categoria (`Z001`, `CORSR`); 12 produtos sem fornecedor | Os 2 produtos são rejeitados (R04); o fornecedor em falta usa o membro «Sem fornecedor» |
-| Linhas de compra sem produto | 12 linhas, quantidade 319, valor 12 615,30 | Rejeitadas na Staging; fora do âmbito do data mart de vendas |
-| Clientes potencialmente duplicados | Clientes 10 e 18 (mesmo NIF e nome normalizados) | Mantidos separados, em revisão |
-| Linhas de fatura com `line_total` ≠ quantidade × preço | 4 linhas (2 com quantidade negativa, 2 com preço negativo) | Fatura rejeitada até confirmar a regra de sinal |
-| Cabeçalho ≠ soma das linhas | 2 faturas, diferenças de +5,00 e −5,00 | Fatura rejeitada |
+| Email e telemóvel | Email ausente em 12 clientes e inválido em 1; telemóvel ausente em 21 | `NULL` (R02) |
+| Emails de funcionários | 2 com dois `@` | `NULL` (R02) |
+| Datas de auditoria invertidas | `last_update` anterior à criação em 8 de 67 produtos e 8 de 14 fornecedores | A carga incremental usa também o *hash* |
+| Linhas de compra sem produto | 12 linhas, quantidade 319, valor 12 615,30 | Rejeitadas na *staging area*; fora do âmbito do *data mart* de vendas (R05) |
+| Linhas de fatura com `line_total` ≠ quantidade × preço | 4 linhas (2 com quantidade negativa, 2 com preço negativo) | Fatura rejeitada até confirmar a regra de sinal (R06) |
+| Cabeçalho ≠ soma das linhas | 2 faturas, diferenças de +5,00 e −5,00 | Fatura rejeitada (R07) |
+| Frete incoerente | 2 faturas com `shipping_cost` superior em 2,50 e 5,00 ao frete incluído no total (2,5 % dos produtos nas outras 35) | Fatura rejeitada (R11) |
 
-**Confirmado e por confirmar.** Os números acima foram confirmados por *queries* sobre a origem. A interpretação dos casos de sinal negativo (devoluções ou erro de dados) e o significado de `invoices.payment_date` (sempre preenchida, entre 03/02 e 31/12/2025 e nunca anterior à data da fatura, pelo que pode ser uma data de vencimento) dependem de confirmação do negócio e estão assinalados como decisões em aberto.
+Há uma única taxa de IVA (23 %), na origem e nas 93 linhas de fatura, e o IVA incide sobre os produtos e não sobre o frete.
+
+## Duplicados de clientes
+
+A igualdade exata do NIF e do nome só encontra o par 10 e 18. Como o enunciado indica que a repetição pode não ser rigorosamente igual, compararam-se todos os pares de clientes por semelhança: o nome (distância de Levenshtein normalizada, mínimo de 0,80) tem de ser acompanhado de pelo menos dois de seis atributos corroborantes (código postal, morada, telefone, email, BBAN, NIF com diferença até duas posições). O critério encontra os três pares e nenhum outro; a semelhança mais alta entre os restantes pares (fora os dois clientes internos, que não têm atributos corroborantes) é 0,59. Os pares 8 e 22 e 5 e 26 têm NIF que diferem em duas posições, e o dígito de controlo não permite dizer qual está correto, porque os quatro falham a verificação, tal como a maior parte dos NIF da amostra. A regra e a escolha do sobrevivente estão na secção «Regras de transformação, limpeza e rejeição». Os fornecedores 8 e 14 têm o mesmo NIF, mas localidade, zona e produtos diferentes, e não se consideram duplicados.
+
+## Impacto das rejeições
+
+Na amostra, as regras de rejeição de faturas (R06, R07 e R11) afetam 7 das 37 faturas, 11 das 93 linhas e 4 989,88 dos 49 341,33 faturados (10,1 % do valor).
+
+| Regra | Faturas | Valor |
+|---|---:|---:|
+| R06: linha com valor diferente de quantidade × preço | 4 | 2 362,02 |
+| R07: cabeçalho diferente da soma das linhas | 2 | 475,65 |
+| R11: frete incoerente (só esta regra) | 2 | 2 333,05 |
+| Total, sem repetir faturas | 7 | 4 989,88 |
+
+Uma fatura é apanhada simultaneamente por R06 e R07, pelo que a soma por regra excede o total. As 12 linhas de compra sem produto e os dois clientes e dois produtos rejeitados por R03 e R04 não afetam nenhuma fatura.
+
+**Confirmado e por confirmar.** Os números foram obtidos por consultas à origem. A interpretação dos sinais negativos (devoluções ou erro de dados), o significado de `invoices.payment_date` (sempre preenchida, entre 03/02 e 31/12/2025 e nunca anterior à fatura, pelo que pode ser uma data de vencimento) e a origem do `shipping_cost` das duas faturas em R11 dependem de confirmação e estão nas decisões em aberto.
 
 # Modelo dimensional
 
@@ -56,7 +106,7 @@ A figura mostra a tabela de factos e as dimensões (atributos marcados com `*` t
 
 ## Implementação física
 
-O esquema foi implementado em SQL Server (`04_ddl_data_mart.sql`) e validado com 33 testes automáticos (chaves, restrições, tipos, calendário e SCD2), todos aprovados numa base de dados descartável. A `Dim_Data` é populada de 2020 a 2035, com feriados nacionais (incluindo os móveis, calculados a partir da Páscoa) e as taxas de câmbio EUR = 1. Os tipos das chaves de negócio coincidem com os da origem (`numeric(10,0)` para clientes e fornecedores, `numeric(6,0)` para funcionários).
+O esquema foi implementado em SQL Server (`04_ddl_data_mart.sql`) e validado com 34 testes automáticos (chaves, restrições, tipos, calendário e SCD2), todos aprovados numa base de dados descartável. A `Dim_Data` é populada de 2020 a 2035, com feriados nacionais (incluindo os móveis, calculados a partir da Páscoa) e as taxas de câmbio EUR = 1. Os tipos das chaves de negócio coincidem com os da origem (`numeric(10,0)` para clientes e fornecedores, `numeric(6,0)` para funcionários).
 
 # Staging Area
 
