@@ -35,10 +35,10 @@ O *profiling* foi feito com seis *scripts* SQL sobre a `MoreRhythm` (inventário
 
 | Problema | Evidência | Tratamento |
 |---|---|---|
-| NIF de cliente em falta | 1 cliente (e 1 com `000000000`) | `N/D`; fora da deteção de duplicados |
-| Zona de cliente em falta | 2 clientes | Não se infere: "Zona desconhecida" |
+| NIF de cliente não identificativo | 4 clientes: vazio, `0`, `00` e `000000000` | `N/D`; fora da deteção de duplicados |
+| Zona de cliente em falta | 2 clientes (2 e 20) | Não se infere: o cliente é rejeitado (R03); nenhuma fatura é afetada |
 | Email e telemóvel em falta | 12 e 21 clientes | Mantêm-se `NULL` |
-| Atributos de produto em falta | 2 designações, famílias e categorias; 12 fornecedores | Membro "Desconhecido" (descritivos) |
+| Atributos de produto em falta | 2 produtos sem designação, família nem categoria (`Z001`, `CORSR`); 12 produtos sem fornecedor | Os 2 produtos são rejeitados (R04); o fornecedor em falta usa o membro «Sem fornecedor» |
 | Linhas de compra sem produto | 12 linhas, quantidade 319, valor 12 615,30 | Rejeitadas na Staging; fora do âmbito do data mart de vendas |
 | Clientes potencialmente duplicados | Clientes 10 e 18 (mesmo NIF e nome normalizados) | Mantidos separados, em revisão |
 | Linhas de fatura com `line_total` ≠ quantidade × preço | 4 linhas (2 com quantidade negativa, 2 com preço negativo) | Fatura rejeitada até confirmar a regra de sinal |
@@ -127,7 +127,7 @@ As regras aplicam-se em tarefas SQL sobre o lote inteiro, não registo a registo
 
 1. **Normalização** (R02, R09): preencher as colunas `normalised_*` e tratar como ausente o valor vazio, só com espaços ou com formato inválido, nas colunas transformadas; o valor original fica na coluna copiada.
 2. **Linhas e faturas** (R05, R06, R07, R11): marcar a linha de compra sem produto; comparar `line_total` com `quantity × unit_price`; calcular `line_sum` e `header_line_difference`; comparar `final_total` com `products_total + shipping_cost + vat_value`. A tolerância monetária é 0,01. Uma violação de R06, R07 ou R11 marca a fatura inteira como `REJECTED`.
-3. **Integridade** (R08): validar as referências não nulas entre tabelas do lote.
+3. **Integridade** (R08): validar as referências não nulas entre tabelas do lote, incluindo as que apontam para clientes ou produtos rejeitados (R03 e R04); nesse caso a fatura inteira é rejeitada.
 4. **Frete**: nas faturas não rejeitadas, `frete_alocado` é proporcional ao valor da linha, com o resto de arredondamento na última linha.
 5. **Estado**: os restantes registos passam a `VALID` ou `CORRIGIDO`; os rejeitados são copiados para `stg_rejections` com a regra, a mensagem e os valores originais em JSON (`FOR JSON PATH`).
 
