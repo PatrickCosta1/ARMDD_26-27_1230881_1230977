@@ -27,14 +27,16 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Telemovel `varchar(45)` | `customers.mobile` | `limpa` | 1 |
 | Morada `nvarchar(55)` | `customers.address` | `limpa` | 1 |
 | Codigo_Postal `varchar(45)` | `customers.zip_code` | `limpa` | 1 |
-| Cidade `nvarchar(43)` | `customers.clity` (grafia da origem) | `limpa`; vazio → `Desconhecida` | **2** |
-| Zona `nvarchar(50)` | `zones.zone` via `customers.zone` | `NULL` ou sem correspondência → `Zona desconhecida`; nunca se infere (R03) | **2** |
-| Pais `nvarchar(30)` | derivado da zona | `Espanha` → Espanha; `Norte`, `Centro`, `Sul`, `Ilhas` → Portugal; zona desconhecida → `Desconhecido` | **2** (com a zona) |
+| Cidade `nvarchar(43)` | `customers.clity` (grafia da origem) | `limpa`; vazio → `Desconhecida` (cliente 21, em Espanha, com 2 faturas: a cidade é descritiva e rejeitá-lo perderia essas vendas) | **2** |
+| Zona `nvarchar(50)` | `zones.zone` via `customers.zone` | `NULL` ou sem correspondência → **cliente rejeitado** (R03); a zona nunca se infere | **2** |
+| Pais `nvarchar(30)` | derivado da zona | `Espanha` → Espanha; `Norte`, `Centro`, `Sul`, `Ilhas` → Portugal (todo o cliente carregado tem zona) | **2** (com a zona) |
 | Tipo_Cliente `nvarchar(20)` | `customers.type` | `limpa` | **2** |
 | Segmento `nvarchar(25)` | `customers.segment` | `limpa` | **2** |
 | Vendedor_Atribuido `nvarchar(30)` | `employees.name` via `customers.seller` | `seller = 0` → `NULL` (4 clientes). O hash SCD2 usa o **número** do vendedor, não o nome | **2** |
 | Dias_Pagamento `smallint` | `customers.days_pay_invoices` | Cópia | 1 |
 | *(excluído)* | `customers.BBAN` | Dado financeiro desnecessário (minimização de dados) | — |
+
+**Clientes sem zona (R03):** não carregam na dimensão e ficam em `stg_rejections`. Como uma fatura que aponta para um cliente rejeitado também é rejeitada (R08), isto não perde vendas na amostra: os clientes 2 e 20 não têm faturas. O mesmo vale para os produtos sem designação, família ou categoria (R04: `Z001` e `CORSR`, sem linhas de fatura).
 
 **Clientes duplicados (R01):** os pares 10/18, 8/22 e 5/26 são consolidados num único cliente (sobreviventes 18, 8 e 5). `Dim_Cliente` tem uma linha por cliente real, com a chave de negócio do sobrevivente, e os clientes absorvidos não geram linhas próprias. Cada atributo usa o valor do sobrevivente se for válido; se for ausente ou inválido usa o valor válido do membro absorvido (por exemplo o email `coro@sapo.pt` do cliente 26 no grupo 5/26). Quando os dois valores são válidos e diferentes (NIF, nome e morada nos grupos 5/26 e 8/22), prevalece o do sobrevivente e a divergência fica em `review_note`. O mapa é persistente: uma decisão `ACTIVE` não é recalculada quando os atributos mudam e só se desfaz por revisão (`DISMISSED`).
 
@@ -43,12 +45,12 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Atributo destino (tipo) | Origem | Transformação / limpeza | SCD |
 |---|---|---|---|
 | BK_Produto `char(18)` | `products.reference` | Cópia (sem `RTRIM`, para coincidir com `invoices_lines.product`) | — |
-| Designacao `nvarchar(60)` | `products.designation` | `limpa`; `NULL` → `Desconhecida` (2 produtos, sem vendas) | 1 |
+| Designacao `nvarchar(60)` | `products.designation` | `limpa`; `NULL` → **produto rejeitado** (R04; 2 produtos, sem vendas) | 1 |
 | BK_Familia `varchar(18)` | `products.family` | `NULL` → `N/D` | — |
-| Familia `nvarchar(60)` | `families.name` | Sem família → `Desconhecida` | **2** |
+| Familia `nvarchar(60)` | `families.name` | Sem família → **produto rejeitado** (R04) | **2** |
 | Classificacao_Familia `nvarchar(20)` | `families.classification` | `limpa`; vazio → `NULL` (8 famílias) | **2** |
 | BK_Categoria `int` | `products.category` | `NULL` → `−1` | — |
-| Categoria `nvarchar(35)` | `categories.Category` | Sem categoria → `Desconhecida` | **2** |
+| Categoria `nvarchar(35)` | `categories.Category` | Sem categoria → **produto rejeitado** (R04) | **2** |
 | Classificacao_Produto `nvarchar(20)` | `products.classification` | `limpa`; se vazia usa `families.classification` (*fallback* da decisão 6) | **2** |
 | Taxa_IVA `decimal(5,2)` | `products.vat_rate` (`numeric(2,0)`) | Cópia; `NULL` mantém-se (2 produtos) | **2** |
 | *(excluídos)* | `stock`, `minimum_stock`, `current_sell_price`, `last_cost_price` | Semi-aditivos ou variáveis; o preço real está no facto | — |
@@ -63,7 +65,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Tipo_Fornecedor `nvarchar(20)` | `suplliers.type` | `limpa` | **2** |
 | Nacionalidade `nvarchar(20)` | `suplliers.nationality` | `limpa`; vazio → `NULL` | 1 |
 | Cidade `nvarchar(43)` | `suplliers.city` | `limpa`; vazio → `Desconhecida` | **2** |
-| Zona `nvarchar(50)` | `zones.zone` via `suplliers.zone` | `NULL` → `Zona desconhecida` | **2** |
+| Zona `nvarchar(50)` | `zones.zone` via `suplliers.zone` | `NULL` → `Zona desconhecida` (fornecedores 3 e 13, sem vendas) | **2** |
 | Morada, Codigo_Postal, Contacto, Cargo_Contacto, Email, Telefone, Telemovel | `address`, `zip_code`, `contact`, `contact_position`, `email`, `phone`, `mobile` | `limpa`; vazio → `NULL` (também o email com formato inválido) | 1 |
 | Dias_Pagamento `smallint` | `suplliers.days_pay_invoices` | Cópia | 1 |
 
