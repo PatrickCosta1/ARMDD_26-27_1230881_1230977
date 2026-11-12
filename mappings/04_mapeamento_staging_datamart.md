@@ -8,7 +8,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 
 | Convenção | Regra |
 |---|---|
-| `limpa(x)` | `LTRIM(RTRIM(x))`; se o resultado for vazio → `NULL`. O valor bruto fica na própria coluna de `stg_<origem>` (cópia 1:1); o JSON só existe em `stg_rejections` |
+| `limpa(x)` | `LTRIM(RTRIM(x))`; se o resultado for vazio → `NULL`. O valor bruto fica na própria coluna de `stg_<origem>` (cópia 1:1); os registos rejeitados ficam também nas tabelas `dqp_<origem>` |
 | Auditoria | `Data_Criacao_Origem = create_date + create_time`; `Data_Atualizacao_Origem = last_update_date + last_update_time` (`datetime2(0)`). Se forem nulos na origem (2 produtos na amostra) usa-se `1900-01-01` |
 | `Hash_SCD1` / `Hash_SCD2` | `HASHBYTES('SHA2_256', ...)` dos atributos SCD1 / SCD2 **já transformados**, concatenados por `\|` com `NULL` → texto vazio e com `CONCAT` |
 | Só carregam | registos com `validation_status` `VALID` ou `CORRIGIDO` (`PENDING` e `REJECTED` não carregam) |
@@ -27,7 +27,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Telemovel `varchar(45)` | `customers.mobile` | `limpa` | 1 |
 | Morada `nvarchar(55)` | `customers.address` | `limpa` | 1 |
 | Codigo_Postal `varchar(45)` | `customers.zip_code` | `limpa` | 1 |
-| Cidade `nvarchar(43)` | `customers.clity` (grafia da origem) | `limpa`; vazio → `Desconhecida` (cliente 21, em Espanha, com 2 faturas: a cidade é descritiva e rejeitá-lo perderia essas vendas) | **2** |
+| Cidade `nvarchar(43)` | `customers.clity` (grafia da origem) | `limpa`; vazio → `Desconhecida` (cliente 21, em Espanha, com 2 faturas). A zona do cliente define a hierarquia geográfica e o país e é critério de várias análises, por isso a sua falta rejeita o cliente; a cidade só rotula, e a falta fica visível como «Desconhecida». Rejeitar o cliente 21 por causa da cidade perderia 2 faturas (3 821,48, 7,7 % do valor) | **2** |
 | Zona `nvarchar(50)` | `zones.zone` via `customers.zone` | `NULL` ou sem correspondência → **cliente rejeitado** (R03); a zona nunca se infere | **2** |
 | Pais `nvarchar(30)` | derivado da zona | `Espanha` → Espanha; `Norte`, `Centro`, `Sul`, `Ilhas` → Portugal (todo o cliente carregado tem zona) | **2** (com a zona) |
 | Tipo_Cliente `nvarchar(20)` | `customers.type` | `limpa` | **2** |
@@ -36,7 +36,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Dias_Pagamento `smallint` | `customers.days_pay_invoices` | Cópia | 1 |
 | *(excluído)* | `customers.BBAN` | Dado financeiro desnecessário (minimização de dados) | — |
 
-**Clientes sem zona (R03):** não carregam na dimensão e ficam em `stg_rejections`. Como uma fatura que aponta para um cliente rejeitado também é rejeitada (R08), isto não perde vendas na amostra: os clientes 2 e 20 não têm faturas. O mesmo vale para os produtos sem designação, família ou categoria (R04: `Z001` e `CORSR`, sem linhas de fatura).
+**Clientes e fornecedores sem zona (R03):** não carregam na dimensão e ficam em `dqp_customers` e `dqp_suplliers`. Como uma fatura que aponta para um cliente rejeitado também é rejeitada (R08), isto não perde vendas na amostra: os clientes 2 e 20 não têm faturas. O mesmo vale para os produtos sem designação, família ou categoria (R04: `Z001` e `CORSR`, sem linhas de fatura).
 
 **Clientes duplicados (R01):** os pares 10/18, 8/22 e 5/26 são consolidados num único cliente (sobreviventes 18, 8 e 5). `Dim_Cliente` tem uma linha por cliente real, com a chave de negócio do sobrevivente, e os clientes absorvidos não geram linhas próprias. Cada atributo usa o valor do sobrevivente se for válido; se for ausente ou inválido usa o valor válido do membro absorvido (por exemplo o email `coro@sapo.pt` do cliente 26 no grupo 5/26). Quando os dois valores são válidos e diferentes (NIF, nome e morada nos grupos 5/26 e 8/22), prevalece o do sobrevivente e a divergência fica em `review_note`. O mapa é persistente: uma decisão `ACTIVE` não é recalculada quando os atributos mudam e só se desfaz por revisão (`DISMISSED`).
 
@@ -46,13 +46,13 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 |---|---|---|---|
 | BK_Produto `char(18)` | `products.reference` | Cópia (sem `RTRIM`, para coincidir com `invoices_lines.product`) | — |
 | Designacao `nvarchar(60)` | `products.designation` | `limpa`; `NULL` → **produto rejeitado** (R04; 2 produtos, sem vendas) | 1 |
-| BK_Familia `varchar(18)` | `products.family` | `NULL` → `N/D` | — |
+| BK_Familia `varchar(18)` | `products.family` | Cópia; `NULL` → produto rejeitado (R04) | — |
 | Familia `nvarchar(60)` | `families.name` | Sem família → **produto rejeitado** (R04) | **2** |
 | Classificacao_Familia `nvarchar(20)` | `families.classification` | `limpa`; vazio → `NULL` (8 famílias) | **2** |
-| BK_Categoria `int` | `products.category` | `NULL` → `−1` | — |
+| BK_Categoria `int` | `products.category` | Cópia; `NULL` → produto rejeitado (R04) | — |
 | Categoria `nvarchar(35)` | `categories.Category` | Sem categoria → **produto rejeitado** (R04) | **2** |
 | Classificacao_Produto `nvarchar(20)` | `products.classification` | `limpa`; se vazia usa `families.classification` (*fallback* da decisão 6) | **2** |
-| Taxa_IVA `decimal(5,2)` | `products.vat_rate` (`numeric(2,0)`) | Cópia; `NULL` mantém-se (2 produtos) | **2** |
+| Taxa_IVA `decimal(5,2)` | `products.vat_rate` (`numeric(2,0)`) | Cópia; `NULL` permitido (na amostra, os 2 produtos sem taxa são os rejeitados por R04) | **2** |
 | *(excluídos)* | `stock`, `minimum_stock`, `current_sell_price`, `last_cost_price` | Semi-aditivos ou variáveis; o preço real está no facto | — |
 
 ## 4. `Dim_Fornecedor` ← `stg_suplliers`, `stg_zones`
@@ -65,7 +65,7 @@ O enunciado exige, para cada atributo, a origem, as operações de transformaç�
 | Tipo_Fornecedor `nvarchar(20)` | `suplliers.type` | `limpa` | **2** |
 | Nacionalidade `nvarchar(20)` | `suplliers.nationality` | `limpa`; vazio → `NULL` | 1 |
 | Cidade `nvarchar(43)` | `suplliers.city` | `limpa`; vazio → `Desconhecida` | **2** |
-| Zona `nvarchar(50)` | `zones.zone` via `suplliers.zone` | `NULL` → `Zona desconhecida` (fornecedores 3 e 13, sem vendas) | **2** |
+| Zona `nvarchar(50)` | `zones.zone` via `suplliers.zone` | `NULL` → **fornecedor rejeitado** (R03; fornecedores 3 e 13, sem produtos nem vendas) | **2** |
 | Morada, Codigo_Postal, Contacto, Cargo_Contacto, Email, Telefone, Telemovel | `address`, `zip_code`, `contact`, `contact_position`, `email`, `phone`, `mobile` | `limpa`; vazio → `NULL` (também o email com formato inválido) | 1 |
 | Dias_Pagamento `smallint` | `suplliers.days_pay_invoices` | Cópia | 1 |
 
@@ -94,7 +94,7 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 |---|---|---|
 | SK_Data_Fatura `int` | `invoices.invoice_date` | `yyyymmdd`; data fora de `Dim_Data` → rejeitar |
 | SK_Data_Pagamento `int` | `invoices.payment_date` | `yyyymmdd`; `NULL` → `−1`. Na amostra a data está sempre preenchida e pode ser de vencimento (a confirmar) |
-| SK_Cliente `int` | `invoices.customer` | Cliente → sobrevivente (`COALESCE(survivor_customer_number, customer)` em `stg_customer_duplicate_groups`, estado `ACTIVE`) e pesquisa em `Dim_Cliente` por `BK_Cliente` e `invoice_date BETWEEN Data_Inicio AND Data_Fim` |
+| SK_Cliente `int` | `invoices.customer` | Cliente → sobrevivente (`COALESCE(survivor_customer_number, customer)` em `stg_customer_duplicate_groups`, estado `ACTIVE`) e *Lookup* da versão corrente (`Versao_Atual = 1`) em `Dim_Cliente` por `BK_Cliente` |
 | SK_Produto `int` | `invoices_lines.product` | Idem, em `Dim_Produto` |
 | SK_Fornecedor `int` | `products.supplyer` do produto da linha | Idem, em `Dim_Fornecedor`; `NULL` → `−1` |
 | SK_Funcionario `int` | `invoices.employee` | Idem, em `Dim_Funcionario` |
@@ -116,9 +116,11 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 
 **Limitação conhecida:** `Dim_Fornecedor` não faz parte da hierarquia SCD de `Dim_Produto`. O fornecedor da linha é o que `products.supplyer` tem na altura da carga e não se historiciza se o produto mudar de fornecedor.
 
+A tabela de factos não tem estratégia SCD: as suas linhas apontam para a versão corrente de cada dimensão e só se atualizam quando a linha de origem muda. `Dim_Data`, `Dim_Taxa_Cambio` e os membros `−1` são imutáveis (sem SCD) e `Dim_Moeda` só tem correções (tipo 1).
+
 ## 8. Algoritmo de carga das dimensões (por lote)
 
-1. Ler da Staging os registos `VALID`/`CORRIGIDO` do lote. Nas tabelas com auditoria fiável (clientes, funcionários, famílias, faturas e linhas) só os que têm `last_update` posterior à última carga bem-sucedida; em zonas, categorias, produtos e fornecedores lê-se tudo e a alteração deteta-se por *hash* (ver §9). Na 1.ª carga leem-se todos.
+1. Ler da Staging os registos `VALID`/`CORRIGIDO` do lote. Nas tabelas com auditoria fiável (clientes, funcionários, famílias, faturas e linhas) só os que têm `last_update` posterior à última carga bem-sucedida; em zonas, categorias, produtos e fornecedores lê-se tudo e a alteração deteta-se por *hash* (ver o quadro «Colunas que a Staging fornece», abaixo). Na 1.ª carga leem-se todos.
 2. Calcular `Hash_SCD1` e `Hash_SCD2` sobre os valores transformados.
 3. Em `Dim_Cliente`, partir só dos sobreviventes do mapa `stg_customer_duplicate_groups` e consolidar os atributos do grupo. Procurar a versão corrente por BK (`Versao_Atual = 1`):
    - **não existe** → inserir versão com `Data_Inicio = 1900-01-01`;
@@ -129,7 +131,7 @@ Não vêm da Staging. `Dim_Data` e `Dim_Taxa_Cambio` (EUR = 1) são populadas po
 
 ## 9. Colunas que a Staging fornece (verificação cruzada)
 
-A Staging tem 15 tabelas (12 `stg_<origem>` e 3 de apoio: `stg_load_control`, `stg_rejections` e `stg_customer_duplicate_groups`). O quadro mostra onde está cada necessidade deste mapeamento.
+A Staging tem 20 tabelas: 12 `stg_<origem>`, 6 tabelas de rejeição `dqp_<origem>` e 2 de apoio (`stg_load_control` e `stg_customer_duplicate_groups`). O quadro mostra onde está cada necessidade deste mapeamento.
 
 | Necessidade do Data Mart | Onde |
 |---|---|
@@ -138,7 +140,7 @@ A Staging tem 15 tabelas (12 `stg_<origem>` e 3 de apoio: `stg_load_control`, `s
 | `frete_alocado` (linhas), `line_sum` e `header_line_difference` (fatura) | `stg_invoices_lines` / `stg_invoices` |
 | Marca de que a classificação do produto veio do *fallback* da família | `stg_products.classification_fallback`; o Data Mart não tem coluna para isso |
 | Mapa origem → sobrevivente dos clientes duplicados | `stg_customer_duplicate_groups` (`source_customer_number`, `survivor_customer_number`, `review_status`) |
-| Registos rejeitados, com os valores originais | `stg_rejections` (JSON só aqui). R06, R07 e R11 rejeitam a fatura inteira |
+| Registos rejeitados, com a regra e a descrição do problema | tabelas `dqp_<origem>` (padrão DQP das aulas). R06, R07 e R11 rejeitam a fatura inteira |
 | Marca para a carga incremental | `MAX(last_update)` de cada tabela `stg_` (não o relógio da extração), só nas tabelas com auditoria fiável (clientes, funcionários, famílias, faturas e linhas). Produtos e fornecedores têm `last_update` anterior à criação em 8 de 67 e 8 de 14 registos, e zonas e categorias não têm auditoria: nestas lê-se tudo e compara-se o `raw_row_hash`. `stg_load_control` não tem `source_table` |
 
 Só entram em `Fact_Vendas` faturas sem R06, R07 e R11 (7 das 37 faturas ficam de fora: 4 989,88 de 49 341,33, ou 10,1 % do valor).

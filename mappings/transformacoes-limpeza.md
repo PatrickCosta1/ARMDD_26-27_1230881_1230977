@@ -19,16 +19,16 @@ A identificação de uma anomalia não prova, por si só, que exista um erro de 
 
 | ID | Problema observado | Regra proposta | Tratamento previsto |
 |---|---|---|---|
-| R01 | Clientes duplicados, iguais ou aproximadamente iguais: pares 10 e 18, 8 e 22 e 5 e 26 | Comparar todos os pares por semelhança de nome, com atributos corroborantes (§4). Escolher o sobrevivente e registar o mapeamento origem → sobrevivente. | Consolidar cada grupo num único cliente na Staging; as faturas dos clientes absorvidos passam para o sobrevivente. Os identificadores originais ficam no mapeamento e a origem não é alterada. |
+| R01 | Clientes duplicados, iguais ou aproximadamente iguais: pares 10 e 18, 8 e 22 e 5 e 26 | Comparar todos os pares por semelhança de nome, com atributos corroborantes (ver «Normalização e duplicados de clientes»). Escolher o sobrevivente e registar o mapeamento origem → sobrevivente. | Consolidar cada grupo num único cliente na Staging; as faturas dos clientes absorvidos passam para o sobrevivente. Os identificadores originais ficam no mapeamento e a origem não é alterada. |
 | R02 | Email e telemóvel em falta; email com formato inválido (1 cliente, 2 funcionários); NIF não identificativo (vazio, só zeros) | Considerar ausente o valor vazio, só com espaços, ou que não cumpra o formato; distinguir atributos opcionais de obrigatórios. | Preservar o valor original; a coluna transformada fica `NULL`. A ausência de contacto, por si só, não exclui uma venda do Data Mart. Um NIF não identificativo não entra na deteção de duplicados. |
-| R03 | Zona em falta em clientes (clientes 2 e 20) | Verificar o valor de origem e a existência de uma correspondência válida em `zones`. | Não inferir uma zona. O cliente não é carregado no Data Mart: fica em `stg_rejections` com a regra R03 e as faturas que o referenciam são rejeitadas (R08). Na amostra nenhuma fatura é afetada. Decisão assumida, a confirmar com o docente. |
-| R04 | Atributos de produto em falta (produtos `Z001` e `CORSR`, sem designação, família nem categoria; 12 produtos sem fornecedor) | Validar designação, família e categoria, que identificam e classificam o produto nas análises, e o fornecedor. | Produto sem designação, família ou categoria: não é carregado; fica em `stg_rejections` com a regra R04 e as linhas de fatura que o referenciam são rejeitadas (R08); na amostra nenhuma fatura é afetada. Produto sem fornecedor: carrega-se com o membro `Sem fornecedor` (SK −1). Não se inventam valores comerciais. |
-| R05 | 12 linhas de compra sem referência de produto | Identificar referências nulas ou vazias em `purchases_lines.product`. | Manter os registos na Staging Area, encaminhá-los para uma estrutura própria de registos com problemas de qualidade e excluí-los do Data Mart enquanto não for possível identificar o produto de forma fiável. Não atribuir um produto arbitrário. |
-| R06 | Quatro linhas de fatura em que quantidade × preço unitário difere de `line_total` | Comparar o valor registado com o cálculo, preservando os sinais e os valores originais. | Sinalizar os quatro casos para investigação. Não aplicar valores absolutos, inverter sinais ou substituir totais sem confirmação da regra de negócio. Se o problema não puder ser resolvido automaticamente e afetar a fiabilidade das medidas, manter os registos na estrutura própria de rejeições da Staging Area e excluí-los do carregamento analítico. |
-| R07 | Duas faturas em que o total de produtos do cabeçalho difere da soma das linhas | Calcular e registar a diferença entre o cabeçalho e as linhas, com uma tolerância documentada de 0,01 para comparação monetária. | Sinalizar as duas faturas. Não escolher automaticamente um dos totais. Se a discrepância não puder ser corrigida de forma fiável e comprometer as medidas carregadas no Data Mart, manter os registos afetados na estrutura própria de rejeições da Staging Area e excluí-los do carregamento analítico. |
-| R08 | Referências a entidades inexistentes ou rejeitadas | Validar as referências não nulas contra as entidades de origem correspondentes e contra os registos que não foram rejeitados (cliente e produto). | Os testes atuais não encontraram referências inexistentes. Uma fatura que referencie um cliente ou um produto rejeitado, ou uma entidade inexistente, é rejeitada inteira: fica em `stg_rejections` e não é carregada. |
-| R09 | Diferenças de representação textual | Aplicar normalização controlada, como remoção de espaços exteriores e normalização de maiúsculas/minúsculas para comparação. | Utilizar valores normalizados para validação e comparação, sem perder os valores originais. Não modificar nomes ou identificadores de negócio de forma irreversível. |
-| R10 | Repetição de registos em cargas sucessivas | Usar as chaves primárias da origem e os atributos de criação/última atualização disponíveis para identificar registos novos ou alterados. | Implementar carregamento incremental idempotente. Uma nova execução não deve duplicar registos já carregados; a estratégia concreta depende da validação dos campos de auditoria e será especificada na etapa de carregamento incremental. |
+| R03 | Zona em falta em clientes (2 e 20) e fornecedores (3 e 13) | Verificar o valor de origem e a existência de uma correspondência válida em `zones`. | Não inferir uma zona. O cliente não é carregado no Data Mart: fica em `dqp_customers` (ou `dqp_suplliers`) com a regra R03 e as faturas que o referenciam são rejeitadas (R08). Na amostra nenhuma fatura é afetada. Decisão assumida, a confirmar com o docente. |
+| R04 | Atributos de produto em falta (produtos `Z001` e `CORSR`, sem designação, família nem categoria; 12 produtos sem fornecedor) | Validar designação, família e categoria, que identificam e classificam o produto nas análises, e o fornecedor. | Produto sem designação, família ou categoria: não é carregado; fica em `dqp_products` com a regra R04 e as linhas de fatura que o referenciam são rejeitadas (R08); na amostra nenhuma fatura é afetada. Produto sem fornecedor: carrega-se com o membro `Sem fornecedor` (SK −1). Não se inventam valores comerciais. |
+| R05 | 12 linhas de compra sem referência de produto | Identificar `purchases_lines.product` nulo ou vazio. | Rejeitar: a linha fica em `dqp_purchases_lines` e não entra no Data Mart. Não se atribui um produto arbitrário. |
+| R06 | Quatro linhas de fatura em que quantidade × preço unitário difere de `line_total` | Comparar o valor registado com o cálculo (tolerância 0,01), sem alterar sinais nem valores. | Rejeitar a fatura inteira: o sinal negativo pode ser uma devolução e os dados não permitem confirmá-lo. Não se aplicam valores absolutos nem se substituem totais. |
+| R07 | Duas faturas em que o total de produtos do cabeçalho difere da soma das linhas | Calcular a diferença entre o cabeçalho e as linhas (tolerância 0,01). | Rejeitar a fatura inteira: não há forma de saber qual dos totais está correto. |
+| R08 | Referências a entidades inexistentes ou rejeitadas | Validar as referências não nulas contra as entidades de origem correspondentes e contra os registos que não foram rejeitados (cliente e produto). | Os testes atuais não encontraram referências inexistentes. Uma fatura que referencie um cliente ou um produto rejeitado, ou uma entidade inexistente, é rejeitada inteira: fica em `dqp_invoices` e `dqp_invoices_lines` e não é carregada. |
+| R09 | Diferenças de representação textual | Normalizar cópias de comparação (espaços, maiúsculas e minúsculas, pontuação). | Os valores normalizados servem só para validar e comparar; os valores originais não se alteram. |
+| R10 | Repetição de registos em cargas sucessivas | Identificar registos novos ou alterados pelas colunas de auditoria da origem e, onde não são fiáveis, por valor de resumo. | Carga incremental e idempotente (secção «Processo ETL»). |
 | R11 | Duas faturas em que `final_total` difere de `products_total + shipping_cost + vat_value` (`shipping_cost` superior ao frete incluído no total em 2,50 e 5,00) | Comparar o total final com a soma dos componentes do cabeçalho, com tolerância de 0,01. | Rejeitar a fatura inteira: o frete a alocar às linhas parte de `shipping_cost` e não há informação para decidir qual dos valores é o frete efetivo. Não são apanhadas por R06 nem por R07. |
 
 ## 3. Classificação dos problemas
@@ -46,6 +46,8 @@ A rejeição deve ser aplicada ao nível do registo e com base no impacto concre
 
 O enunciado pede a eliminação das redundâncias «iguais ou aproximadamente iguais». A igualdade exata de contribuinte e nome só encontra um par (10 e 18); a comparação por semelhança encontra mais dois (8 e 22; 5 e 26). Os resultados estão em [`resultados.md`](../data-profiling/resultados.md), §5.
 
+A deteção e a consolidação dos duplicados seguem os passos clássicos de limpeza de dados: a normalização (4.1) corresponde à uniformização dos valores (*standardizing*), a comparação por semelhança (4.2) à deteção de registos equivalentes (*matching*) e a escolha do sobrevivente e dos valores consolidados (4.3) à fusão dos registos numa só representação (*consolidating*).
+
 ### 4.1. Normalização para comparação
 
 A normalização aplica-se a cópias de comparação; os valores originais são preservados.
@@ -58,7 +60,7 @@ A normalização aplica-se a cópias de comparação; os valores originais são 
 
 ### 4.2. Critério de deteção
 
-Para cada par de clientes calcula-se a semelhança do nome (1 menos a distância de Levenshtein dividida pelo comprimento da maior cadeia). Um par é duplicado quando:
+O passo de deteção (*matching*) usa regras de deteção definidas à partida, como nas aulas, para identificar nomes e moradas semelhantes. Para cada par de clientes calcula-se a semelhança do nome (1 menos a distância de Levenshtein dividida pelo comprimento da maior cadeia). Um par é duplicado quando:
 
 1. a semelhança do nome é pelo menos 0,80; e
 2. existem pelo menos dois atributos corroborantes entre: mesmo código postal; semelhança da morada pelo menos 0,80; mesmo telefone ou telemóvel; mesmo email válido; mesmo BBAN; NIF válidos com distância de Levenshtein não superior a 2.
@@ -106,8 +108,8 @@ Os resultados atuais identificam valores em falta em atributos de clientes e pro
 O tratamento deve distinguir:
 
 - **Contactos em falta:** preservar os nulos; não são, por si só, motivo para excluir um facto de venda.
-- **Produto sem designação, família ou categoria (R04):** não se carrega e fica em `stg_rejections`; sem fornecedor, carrega-se com o membro `Sem fornecedor`.
-- **Zona de cliente em falta (R03):** não se infere; o cliente não se carrega e fica em `stg_rejections`.
+- **Produto sem designação, família ou categoria (R04):** não se carrega e fica em `dqp_products`; sem fornecedor, carrega-se com o membro `Sem fornecedor`.
+- **Zona de cliente em falta (R03):** não se infere; o cliente não se carrega e fica em `dqp_customers` (ou `dqp_suplliers`).
 - **Produto em falta numa linha de compra:** não é possível atribuir a linha a um produto conhecido; manter na Staging Area de rejeições e excluir do Data Mart enquanto não for resolvida.
 - **Referência não nula sem correspondência, ou a um registo rejeitado (R08):** a fatura inteira é rejeitada.
 
@@ -138,16 +140,15 @@ As regras desta especificação são aplicadas pela ordem seguinte:
 
 Ficam fechadas as seguintes decisões para a Fase 1:
 
-- **Clientes duplicados:** os pares 10 e 18, 8 e 22 e 5 e 26 são consolidados no sobrevivente (§4), com mapeamento origem → sobrevivente em `stg_customer_duplicate_groups`. Os identificadores originais não se perdem; a origem não é alterada.
+- **Clientes duplicados:** os pares 10 e 18, 8 e 22 e 5 e 26 são consolidados no sobrevivente (ver «Normalização e duplicados de clientes»), com mapeamento origem → sobrevivente em `stg_customer_duplicate_groups`. Os identificadores originais não se perdem; a origem não é alterada.
 - **Quantidades e preços negativos:** não são convertidos para valores absolutos nem reinterpretados como devoluções. As quatro linhas financeiras e as respetivas faturas ficam `REJECTED` até existir confirmação da semântica.
 - **Divergências de cabeçalho:** as duas faturas com diferença entre o total de produtos e a soma das linhas são rejeitadas integralmente. A rejeição ao nível da fatura preserva a reconciliação do frete alocado.
-- **Produto desconhecido em compras:** as 12 linhas ficam em `stg_rejections` com os valores originais; não entram no Data Mart de vendas.
+- **Produto desconhecido em compras:** as 12 linhas ficam em `dqp_purchases_lines`; não entram no Data Mart de vendas.
 - **Membro desconhecido:** só se usa para o fornecedor em falta (membro `Sem fornecedor`) e para atributos opcionais, como os contactos. Não substitui a zona do cliente, a designação, a família ou a categoria do produto (esses registos são rejeitados, R03 e R04), nem uma referência de produto, cliente, documento, quantidade, preço ou total inválida.
 - **Contactos opcionais:** permanecem `NULL`. Valores vazios são normalizados para `NULL` numa coluna transformada, conservando o valor bruto.
 - **Vendas com IVA:** `Valor_Liquido + Valor_IVA`, sem frete. O frete apenas entra em `Total_Faturado` e nas análises que o pedem explicitamente. A origem indica IVA ao nível dos produtos, pelo que não se presume IVA sobre o frete.
 - **Frete incoerente (R11):** as duas faturas em que `final_total` difere de `products_total + shipping_cost + vat_value` são rejeitadas integralmente. Somadas às faturas de R06 e R07 (5 faturas, 2 656,84), as rejeições passam a 7 de 37 faturas, 11 de 93 linhas e 4 989,88 de 49 341,33 (10,1 % do valor).
 - **Frete:** é alocado proporcionalmente ao valor líquido das linhas válidas da fatura, arredondado a 6 casas, e o resíduo é atribuído à última linha por ordem estável de `invoice_line_stamp_id`. Se alguma linha da fatura for rejeitada, a fatura inteira é rejeitada.
-- **Moeda:** a taxa é obtida de uma fonte de câmbio versionada por moeda e data da fatura. Para EUR a taxa é 1. Se não existir taxa aplicável, o registo fica rejeitado; não se usa a taxa do dia anterior sem regra documentada.
-- **Idempotência:** `source_table + source_pk + load_id` identifica a extração e `source_table + source_pk` identifica o registo lógico. O Data Mart usa as chaves de negócio e `MERGE`/upsert controlado; repetir o mesmo lote não cria factos adicionais.
+- **Moeda:** a taxa é a da moeda no dia da fatura (`Dim_Taxa_Cambio`); para EUR é 1. Se não existir taxa aplicável, o registo fica rejeitado; não se usa a taxa do dia anterior.
+- **Idempotência:** `source_table + source_pk + load_id` identifica a extração e `source_table + source_pk` o registo lógico. O Data Mart usa as chaves de negócio e *Lookups*; repetir o mesmo lote não cria factos adicionais.
 
-Estas decisões substituem as formulações de “decisão pendente” existentes nos documentos e devem ser usadas como referência pelos mapeamentos e pelo ETL.

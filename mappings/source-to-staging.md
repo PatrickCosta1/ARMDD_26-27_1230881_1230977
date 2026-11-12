@@ -99,7 +99,7 @@ Todos os registos são extraídos e preservados na Staging. Cada grupo é consol
 
 Foram identificadas quatro linhas de faturas em que o valor registado não coincide com o produto da quantidade pelo preço unitário (R06), duas faturas em que o total de produtos do cabeçalho difere da soma das linhas (R07) e duas faturas em que o total final não coincide com a soma de produtos, frete e IVA (R11).
 
-A origem não permite confirmar se os sinais negativos correspondem a notas de crédito ou devoluções, nem qual dos valores é o correto nas faturas divergentes. Como o enunciado exclui do Data Mart o que não pode ser corrigido automaticamente, as faturas afetadas (7 de 37, 10,1 % do valor) ficam rejeitadas na Staging, com os valores originais em `stg_rejections` (ver §9.1).
+A origem não permite confirmar se os sinais negativos correspondem a notas de crédito ou devoluções, nem qual dos valores é o correto nas faturas divergentes. Como o enunciado exclui do Data Mart o que não pode ser corrigido automaticamente, as faturas afetadas (7 de 37, 10,1 % do valor) ficam rejeitadas na Staging, nas tabelas `dqp_invoices` e `dqp_invoices_lines` (ver §9.1).
 
 ### 7.4. Valores em falta
 
@@ -131,13 +131,13 @@ O `source_pk` é composto por `coluna=valor` em ordem alfabética das colunas da
 
 ### 9.1. Controlo de lotes, rejeições e clientes duplicados
 
-A Staging tem 15 tabelas: as 12 `stg_<origem>` e três de apoio.
+A Staging tem 20 tabelas: as 12 `stg_<origem>`, as 6 tabelas de rejeição `dqp_<origem>` e duas de apoio.
 
 - `stg_load_control` regista `load_id`, origem, início e fim, contagens extraídas, válidas e rejeitadas e o estado do lote.
-- `stg_rejections` regista uma linha por registo e por regra violada: `load_id`, `source_table`, `source_pk`, `raw_row_json`, `validation_rule`, `validation_message`, `rejected_at` e `resolution_status` (`OPEN`, `RESOLVED`, `CANCELLED`). Conserva os valores originais do registo rejeitado em JSON.
+- `dqp_<origem>` (`dqp_customers`, `dqp_suplliers`, `dqp_products`, `dqp_invoices`, `dqp_invoices_lines` e `dqp_purchases_lines`) guarda os registos rejeitados, no padrão DQP (*Data Quality Problems*) das aulas práticas. Cada tabela tem os atributos do registo de origem, o `load_id`, a regra violada (`validation_rule`) e a descrição do problema (`DQP`); um registo que viole várias regras aparece uma vez por regra.
 - `stg_customer_duplicate_groups` regista, por cliente de origem que pertence a um grupo de duplicados, o grupo, o sobrevivente, a semelhança do nome e o número de atributos corroborantes, o estado da decisão (`ACTIVE` ou `DISMISSED`), a carga em que foi tomada e a nota com os valores válidos e diferentes entre os membros. A decisão é persistente e só se desfaz por revisão explícita (regra R01, [`transformacoes-limpeza.md`](transformacoes-limpeza.md) §4).
 
-**Redundância e eficiência.** As tabelas `stg_<origem>` guardam todos os registos extraídos, com os valores da origem e o estado de validação. Por isso o JSON só é usado nas rejeições; não existe uma segunda cópia, em JSON, de todos os registos. Evita-se duplicar o volume da origem e manter o estado de validação em dois sítios. A idempotência assenta no `raw_row_hash` e na chave `(load_id, source_pk)` de cada tabela.
+**Rejeição.** O enunciado exige que os registos com problemas de qualidade que não se corrigem automaticamente fiquem em tabelas criadas para o efeito na Staging e não sejam carregados no Data Mart; as tabelas DQP cumprem esse requisito. Os valores de origem também ficam na tabela `stg_<origem>`, com o estado `REJECTED`; não há uma segunda cópia completa dos registos. A idempotência assenta na chave `(load_id, source_pk)` de cada tabela e, nas tabelas sem auditoria fiável, no `raw_row_hash`.
 
 **Regras que rejeitam.** As 12 linhas de compras sem produto usam `R05`; as quatro linhas financeiras usam `R06`; as duas faturas com cabeçalho diferente da soma das linhas usam `R07`; as duas faturas com frete incoerente usam `R11`. Uma rejeição por R06, R07 ou R11 rejeita a fatura inteira, para que o frete só seja alocado sobre um conjunto completo de linhas. No conjunto, são rejeitadas 7 das 37 faturas (4 989,88 de 49 341,33; 10,1 % do valor).
 

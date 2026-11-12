@@ -4,14 +4,14 @@
 
   Estruturas de apoio (este ficheiro):
     stg_load_control                controlo das execucoes de carga
-    stg_rejections                  registos rejeitados, com os valores originais em JSON
     stg_customer_duplicate_groups   clientes duplicados e respetivo sobrevivente
 
-  As 12 tabelas stg_<origem> (uma por tabela da origem) estao em
-  05_ddl_staging_tabelas_tipadas.sql. Guardam todos os registos extraidos com os nomes e
-  tipos da origem, mais o estado de validacao; os valores nao sao convertidos nem
-  corrigidos nessas tabelas. O JSON so e usado para os registos rejeitados, de modo a nao
-  guardar duas vezes os registos validos.
+  As 12 tabelas stg_<origem> (uma por tabela da origem) e as 6 tabelas de rejeicao
+  dqp_<origem> estao em 05_ddl_staging_tabelas_tipadas.sql. As tabelas stg_<origem>
+  guardam todos os registos extraidos com os nomes e tipos da origem, mais o estado de
+  validacao; os valores nao sao convertidos nem corrigidos nessas tabelas. As tabelas
+  dqp_<origem> guardam os registos rejeitados com a descricao do problema (padrao DQP
+  das aulas praticas).
 
   Ordem de execucao: 03, 05 e, para testar, 06_testes_staging.sql.
 */
@@ -34,26 +34,6 @@ CREATE TABLE dbo.stg_load_control (
     CONSTRAINT PK_stg_load_control PRIMARY KEY (load_id),
     CONSTRAINT CK_stg_load_status CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED'))
 );
-GO
-
-CREATE TABLE dbo.stg_rejections (
-    rejection_id             bigint IDENTITY(1,1) NOT NULL,
-    load_id                  bigint NOT NULL,
-    source_table              sysname NOT NULL,
-    source_pk                nvarchar(250) NOT NULL,
-    raw_row_json              nvarchar(max) NOT NULL,
-    validation_rule            varchar(10) NOT NULL,
-    validation_message         nvarchar(1000) NOT NULL,
-    rejected_at               datetime2(3) NOT NULL CONSTRAINT DF_stg_rej_at DEFAULT (SYSUTCDATETIME()),
-    resolution_status          varchar(20) NOT NULL CONSTRAINT DF_stg_rej_resolution DEFAULT ('OPEN'),
-    CONSTRAINT PK_stg_rejections PRIMARY KEY (rejection_id),
-    CONSTRAINT FK_stg_rej_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id),
-    CONSTRAINT CK_stg_rej_resolution CHECK (resolution_status IN ('OPEN', 'RESOLVED', 'CANCELLED'))
-);
-GO
-
-CREATE INDEX IX_stg_rejections_lookup
-    ON dbo.stg_rejections (source_table, source_pk, resolution_status);
 GO
 
 /*

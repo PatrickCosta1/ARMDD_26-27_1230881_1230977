@@ -1,6 +1,6 @@
 /*
   Staging Area - More Rhythm
-  Tabelas tipadas stg_<origem> (12 tabelas)
+  Tabelas tipadas stg_<origem> (12 tabelas) e tabelas de rejeicao dqp_<origem> (6 tabelas)
 
   Pre-requisito: 03_ddl_staging_area.sql (stg_load_control e restantes tabelas de apoio).
   Cada tabela guarda as colunas de negocio da origem com o mesmo nome, tipo, precisao e
@@ -451,4 +451,184 @@ CREATE TABLE dbo.stg_stocks_movements (
 );
 GO
 CREATE INDEX IX_stg_stocks_movements_bk ON dbo.stg_stocks_movements (stock_movement_stamp, extraction_timestamp);
+GO
+
+/*==============================================================================
+  Tabelas DQP (Data Quality Problems): registos rejeitados, uma por tabela de origem em
+  que as regras de limpeza rejeitam registos. Seguem o padrao usado nas aulas praticas
+  (CardDQP, TransactionDQP, FactSalesDQP): os atributos do registo de origem mais a
+  descricao do problema. Os registos nestas tabelas nao sao carregados no Data Mart; a sua
+  correcao esta fora do ambito do trabalho. Um registo pode aparecer varias vezes se
+  violar varias regras.
+==============================================================================*/
+
+/*---- dqp_customers : Clientes rejeitados (R03: sem zona; nome em falta) ----*/
+CREATE TABLE dbo.dqp_customers (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_customers_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    number                numeric(10,0) NOT NULL,
+    name                  varchar(55) NOT NULL,
+    taxpayer_number       varchar(20) NOT NULL,
+    phone                 varchar(60) NOT NULL,
+    mobile                varchar(45) NOT NULL,
+    contact               varchar(30) NOT NULL,
+    email                 varchar(45) NOT NULL,
+    address               varchar(55) NOT NULL,
+    clity                 varchar(43) NOT NULL,
+    zip_code              varchar(45) NOT NULL,
+    zone                  numeric(5,0) NULL,
+    type                  varchar(20) NOT NULL,
+    seller                numeric(4,0) NOT NULL,
+    days_pay_invoices     numeric(3,0) NOT NULL,
+    BBAN                  varchar(28) NOT NULL,
+    segment               varchar(25) NOT NULL,
+    create_date           date NOT NULL,
+    create_time           time NOT NULL,
+    last_update_date      date NOT NULL,
+    last_update_time      time NOT NULL,
+    CONSTRAINT PK_dqp_customers PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_customers_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
+GO
+
+/*---- dqp_invoices : Faturas rejeitadas (R06, R07, R08 ou R11) ----*/
+CREATE TABLE dbo.dqp_invoices (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_invoices_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    invoice_stamp_id      char(25) NOT NULL,
+    invoice_date          date NOT NULL,
+    customer              numeric(10,0) NOT NULL,
+    employee              numeric(6,0) NOT NULL,
+    payment_date          date NOT NULL,
+    currency              varchar(11) NOT NULL,
+    products_total        numeric(19,6) NOT NULL,
+    shipping_cost         numeric(19,6) NOT NULL,
+    total_for_vat         numeric(19,6) NOT NULL,
+    vat_value             numeric(19,6) NOT NULL,
+    final_total           numeric(19,6) NOT NULL,
+    create_date           date NOT NULL,
+    create_time           time NOT NULL,
+    last_update_date      date NOT NULL,
+    last_update_time      time NOT NULL,
+    CONSTRAINT PK_dqp_invoices PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_invoices_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
+GO
+
+/*---- dqp_invoices_lines : Linhas de fatura de faturas rejeitadas (R06, R07, R08 ou R11) ----*/
+CREATE TABLE dbo.dqp_invoices_lines (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_invoices_lines_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    invoice_line_stamp_id char(25) NOT NULL,
+    invoice_stamp_id      char(25) NOT NULL,
+    product               char(18) NOT NULL,
+    quantity              numeric(14,4) NOT NULL,
+    unit_price            numeric(19,6) NOT NULL,
+    line_total            numeric(19,6) NOT NULL,
+    line_vat              numeric(19,6) NULL,
+    create_date           date NOT NULL,
+    create_time           time NOT NULL,
+    last_update_date      date NOT NULL,
+    last_update_time      time NOT NULL,
+    CONSTRAINT PK_dqp_invoices_lines PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_invoices_lines_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
+GO
+
+/*---- dqp_products : Produtos rejeitados (R04: sem designacao, familia ou categoria) ----*/
+CREATE TABLE dbo.dqp_products (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_products_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    reference             char(18) NOT NULL,
+    designation           char(60) NULL,
+    family                varchar(18) NULL,
+    stock                 numeric(13,3) NULL,
+    current_sell_price    numeric(19,6) NULL,
+    supplyer              numeric(10,0) NULL,
+    minimum_stock         numeric(13,3) NULL,
+    category              int NULL,
+    classification        varchar(20) NULL,
+    last_cost_price       numeric(19,6) NULL,
+    vat_rate              numeric(2,0) NULL,
+    create_date           date NULL,
+    create_time           time NULL,
+    last_update_date      date NULL,
+    last_update_time      time NULL,
+    CONSTRAINT PK_dqp_products PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_products_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
+GO
+
+/*---- dqp_purchases_lines : Linhas de compra rejeitadas (R05: sem produto) ----*/
+CREATE TABLE dbo.dqp_purchases_lines (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_purchases_lines_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    purchase_line_stamp   char(25) NOT NULL,
+    purchase_stamp        char(25) NOT NULL,
+    document_name         varchar(20) NOT NULL,
+    document_number       varchar(20) NOT NULL,
+    document_date         date NOT NULL,
+    product               char(18) NULL,
+    quantity              numeric(14,4) NOT NULL,
+    unit_price            numeric(19,6) NOT NULL,
+    line_total            numeric(19,6) NOT NULL,
+    create_date           date NOT NULL,
+    create_time           time NULL,
+    last_update_date      date NOT NULL,
+    last_update_time      time NULL,
+    CONSTRAINT PK_dqp_purchases_lines PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_purchases_lines_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
+GO
+
+/*---- dqp_suplliers : Fornecedores rejeitados (R03: sem zona) ----*/
+CREATE TABLE dbo.dqp_suplliers (
+    dqp_row_id            bigint IDENTITY(1,1) NOT NULL,
+    load_id               bigint NOT NULL,
+    extraction_timestamp  datetime2(3) NOT NULL CONSTRAINT DF_dqp_suplliers_ts DEFAULT (SYSUTCDATETIME()),
+    validation_rule       varchar(10) NOT NULL,
+    DQP                   nvarchar(1000) NOT NULL,   -- descricao do problema de qualidade
+    -- atributos do registo de origem
+    number                numeric(10,0) NOT NULL,
+    name                  varchar(55) NOT NULL,
+    phone                 varchar(60) NOT NULL,
+    contact               varchar(30) NOT NULL,
+    address               varchar(55) NOT NULL,
+    city                  varchar(43) NOT NULL,
+    zip_code              varchar(45) NOT NULL,
+    taxpayer_number       varchar(20) NOT NULL,
+    zone                  numeric(5,0) NULL,
+    type                  varchar(20) NOT NULL,
+    days_pay_invoices     numeric(3,0) NOT NULL,
+    contact_position      varchar(15) NOT NULL,
+    email                 varchar(45) NOT NULL,
+    nationality           varchar(20) NOT NULL,
+    mobile                varchar(45) NOT NULL,
+    create_date           date NOT NULL,
+    create_time           time NOT NULL,
+    last_update_date      date NOT NULL,
+    last_update_time      time NOT NULL,
+    CONSTRAINT PK_dqp_suplliers PRIMARY KEY (dqp_row_id),
+    CONSTRAINT FK_dqp_suplliers_load FOREIGN KEY (load_id) REFERENCES dbo.stg_load_control (load_id)
+);
 GO

@@ -27,18 +27,23 @@ WHERE name IN ('stg_categories', 'stg_customers', 'stg_employees', 'stg_families
                'stg_products', 'stg_purchases', 'stg_purchases_lines', 'stg_stocks_movements', 'stg_suplliers', 'stg_zones');
 
 INSERT @T (Teste, Ok, Detalhe)
-SELECT '1.02 Existem as 3 tabelas de apoio (lotes, rejeicoes, duplicados)', CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END, CONCAT('tabelas=', COUNT(*))
+SELECT '1.02 Existem as 2 tabelas de apoio (lotes e duplicados)', CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END, CONCAT('tabelas=', COUNT(*))
 FROM sys.tables
-WHERE name IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
+WHERE name IN ('stg_load_control', 'stg_customer_duplicate_groups');
+
+INSERT @T (Teste, Ok, Detalhe)
+SELECT '1.05 Existem as 6 tabelas de rejeicao dqp_<origem>', CASE WHEN COUNT(*) = 6 THEN 1 ELSE 0 END, CONCAT('tabelas=', COUNT(*))
+FROM sys.tables
+WHERE name IN ('dqp_customers', 'dqp_suplliers', 'dqp_products', 'dqp_invoices', 'dqp_invoices_lines', 'dqp_purchases_lines');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '1.03 A tabela tecnica sysdiagrams nao foi copiada', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, NULL
 FROM sys.tables WHERE name LIKE '%sysdiagrams%';
 
 INSERT @T (Teste, Ok, Detalhe)
-SELECT '1.04 Nao existe copia em JSON de todos os registos (stg_raw_rows): o JSON so existe em stg_rejections',
-       CASE WHEN OBJECT_ID('dbo.stg_raw_rows') IS NULL
-             AND EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.stg_rejections') AND name = 'raw_row_json')
+SELECT '1.04 Nao existe copia em JSON dos registos (stg_raw_rows, stg_rejections nem colunas raw_row_json)',
+       CASE WHEN OBJECT_ID('dbo.stg_raw_rows') IS NULL AND OBJECT_ID('dbo.stg_rejections') IS NULL
+             AND NOT EXISTS (SELECT 1 FROM sys.columns WHERE name = 'raw_row_json')
             THEN 1 ELSE 0 END, NULL;
 
 /*------------- 2. Colunas de negocio iguais as da origem (tipo, nulabilidade) -------------*/
@@ -57,10 +62,24 @@ LEFT JOIN INFORMATION_SCHEMA.COLUMNS d
 WHERE s.TABLE_NAME <> 'sysdiagrams';
 
 INSERT @T (Teste, Ok, Detalhe)
+SELECT '2.05 As colunas de negocio das 6 tabelas dqp_<origem> tem o mesmo tipo, tamanho e nulabilidade da origem',
+       CASE WHEN SUM(CASE WHEN d.COLUMN_NAME IS NULL THEN 1 ELSE 0 END) = 0 THEN 1 ELSE 0 END,
+       CONCAT('colunas da origem=', COUNT(*), '; sem correspondencia=', SUM(CASE WHEN d.COLUMN_NAME IS NULL THEN 1 ELSE 0 END))
+FROM $(SRC_DB).INFORMATION_SCHEMA.COLUMNS s
+LEFT JOIN INFORMATION_SCHEMA.COLUMNS d
+       ON d.TABLE_SCHEMA = 'dbo' AND d.TABLE_NAME = 'dqp_' + s.TABLE_NAME AND d.COLUMN_NAME = s.COLUMN_NAME
+      AND d.DATA_TYPE = s.DATA_TYPE
+      AND ISNULL(d.CHARACTER_MAXIMUM_LENGTH, -1) = ISNULL(s.CHARACTER_MAXIMUM_LENGTH, -1)
+      AND ISNULL(CAST(d.NUMERIC_PRECISION AS int), -1) = ISNULL(CAST(s.NUMERIC_PRECISION AS int), -1)
+      AND ISNULL(CAST(d.NUMERIC_SCALE AS int), -1) = ISNULL(CAST(s.NUMERIC_SCALE AS int), -1)
+      AND d.IS_NULLABLE = s.IS_NULLABLE
+WHERE s.TABLE_NAME IN ('customers', 'suplliers', 'products', 'invoices', 'invoices_lines', 'purchases_lines');
+
+INSERT @T (Teste, Ok, Detalhe)
 SELECT '2.02 Cada tabela stg_ tem todas as colunas tecnicas do contrato',
        CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END, CONCAT('tabelas incompletas=', COUNT(*))
 FROM sys.tables t
-WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups')
+WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_customer_duplicate_groups')
   AND (SELECT COUNT(*) FROM sys.columns c WHERE c.object_id = t.object_id
        AND c.name IN ('stg_row_id', 'load_id', 'source_table', 'source_pk', 'extraction_timestamp',
                       'validation_status', 'validation_rule', 'validation_message', 'raw_row_hash')) <> 9;
@@ -71,7 +90,7 @@ SELECT '2.03 Tipos das colunas tecnicas (stg_row_id bigint, load_id bigint, time
 FROM sys.tables t
 JOIN sys.columns c ON c.object_id = t.object_id
 JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups')
+WHERE t.name LIKE 'stg[_]%' AND t.name NOT IN ('stg_load_control', 'stg_customer_duplicate_groups')
   AND NOT (   (c.name = 'stg_row_id' AND ty.name = 'bigint')
            OR (c.name = 'load_id' AND ty.name = 'bigint')
            OR (c.name = 'extraction_timestamp' AND ty.name = 'datetime2' AND c.scale = 3)
@@ -110,14 +129,14 @@ JOIN sys.tables t ON t.object_id = k.parent_object_id
 JOIN sys.index_columns ic ON ic.object_id = k.parent_object_id AND ic.index_id = k.unique_index_id
 JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
 WHERE k.type = 'PK' AND c.name = 'stg_row_id' AND t.name LIKE 'stg[_]%'
-  AND t.name NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
+  AND t.name NOT IN ('stg_load_control', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.02 As 12 tabelas tem FK de load_id para stg_load_control',
        CASE WHEN COUNT(*) = 12 THEN 1 ELSE 0 END, CONCAT('FK=', COUNT(*))
 FROM sys.foreign_keys
 WHERE referenced_object_id = OBJECT_ID('dbo.stg_load_control')
-  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_rejections', 'stg_customer_duplicate_groups');
+  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_customer_duplicate_groups') AND OBJECT_NAME(parent_object_id) NOT LIKE 'dqp[_]%';
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.03 As 12 tabelas tem UNIQUE (load_id, source_pk)',
@@ -129,7 +148,7 @@ SELECT '4.04 As 12 tabelas tem CHECK de estado, de source_table e do formato de 
        CASE WHEN COUNT(*) = 36 THEN 1 ELSE 0 END, CONCAT('CK=', COUNT(*))
 FROM sys.check_constraints
 WHERE (name LIKE 'CK[_]stg[_]%[_]status' OR name LIKE 'CK[_]stg[_]%[_]src' OR name LIKE 'CK[_]stg[_]%[_]pk')
-  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_load_control', 'stg_rejections', 'stg_customer_duplicate_groups');
+  AND OBJECT_NAME(parent_object_id) NOT IN ('stg_load_control', 'stg_customer_duplicate_groups');
 
 INSERT @T (Teste, Ok, Detalhe)
 SELECT '4.05 stg_customer_duplicate_groups: PK por cliente, FK do sobrevivente para a propria tabela e FK para o lote',
@@ -302,27 +321,33 @@ BEGIN TRY  -- semelhanca fora do intervalo
     INSERT @T (Teste, Ok, Detalhe) VALUES ('5.19 CK: semelhanca do nome fora de 0 a 1 e rejeitada', 0, NULL);
 END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.19 CK: semelhanca do nome fora de 0 a 1 e rejeitada', 1, ERROR_MESSAGE()); END CATCH;
 
--- rejeicoes: a regra R11 cabe em validation_rule e o estado de resolucao tem valor por omissao
+-- DQP: registo rejeitado guarda os atributos de origem, a regra e a descricao do problema
 BEGIN TRY
-    INSERT dbo.stg_rejections (load_id, source_table, source_pk, raw_row_json, validation_rule, validation_message)
-    VALUES (@l1, N'invoices', N'invoice_stamp_id=FTESTE1', N'{"invoice_stamp_id":"FTESTE1"}', 'R11', N'frete incoerente');
+    INSERT dbo.dqp_purchases_lines (load_id, validation_rule, DQP,
+        purchase_line_stamp, purchase_stamp, document_name, document_number, document_date, product,
+        quantity, unit_price, line_total, create_date, last_update_date)
+    VALUES (@l1, 'R05', N'linha de compra sem produto',
+        'PLTESTE1', 'PTESTE1', 'Fatura', '1', '2025-02-01', NULL, 10, 5, 50, '2025-02-01', '2025-02-01');
     INSERT @T (Teste, Ok, Detalhe)
-    SELECT '5.20 Rejeicao com a regra R11 e guardada com o JSON original e resolution_status = OPEN por omissao',
-           CASE WHEN resolution_status = 'OPEN' AND validation_rule = 'R11' THEN 1 ELSE 0 END, NULL
-    FROM dbo.stg_rejections WHERE source_pk = N'invoice_stamp_id=FTESTE1';
-END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.20 Rejeicao com a regra R11 e guardada com o JSON original e resolution_status = OPEN por omissao', 0, ERROR_MESSAGE()); END CATCH;
+    SELECT '5.20 DQP: linha de compra sem produto (R05) e guardada com a regra, a descricao e a data da extracao por omissao',
+           CASE WHEN validation_rule = 'R05' AND DQP LIKE N'%sem produto%' AND extraction_timestamp IS NOT NULL THEN 1 ELSE 0 END, NULL
+    FROM dbo.dqp_purchases_lines WHERE purchase_line_stamp = 'PLTESTE1';
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.20 DQP: linha de compra sem produto (R05) e guardada com a regra, a descricao e a data da extracao por omissao', 0, ERROR_MESSAGE()); END CATCH;
 
-BEGIN TRY
-    INSERT dbo.stg_rejections (load_id, source_table, source_pk, raw_row_json, validation_rule, validation_message, resolution_status)
-    VALUES (@l1, N'invoices', N'invoice_stamp_id=FTESTE2', N'{}', 'R07', N'divergencia', 'FECHADA');
-    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 CK: estado de resolucao fora de OPEN/RESOLVED/CANCELLED e rejeitado', 0, NULL);
-END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 CK: estado de resolucao fora de OPEN/RESOLVED/CANCELLED e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
+BEGIN TRY  -- a descricao do problema e obrigatoria
+    INSERT dbo.dqp_purchases_lines (load_id, validation_rule, DQP,
+        purchase_line_stamp, purchase_stamp, document_name, document_number, document_date, product,
+        quantity, unit_price, line_total, create_date, last_update_date)
+    VALUES (@l1, 'R05', NULL,
+        'PLTESTE2', 'PTESTE1', 'Fatura', '1', '2025-02-01', NULL, 10, 5, 50, '2025-02-01', '2025-02-01');
+    INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 NOT NULL: o registo DQP sem descricao do problema e rejeitado', 0, NULL);
+END TRY BEGIN CATCH INSERT @T (Teste, Ok, Detalhe) VALUES ('5.21 NOT NULL: o registo DQP sem descricao do problema e rejeitado', 1, ERROR_MESSAGE()); END CATCH;
 
 ROLLBACK TRANSACTION;
 
 /*------------------------------- Resultado ---------------------------------*/
 -- se um teste rebentar com erro nao regista resultado; por isso o total tambem e verificado
-DECLARE @esperados int = 37;
+DECLARE @esperados int = 39;
 IF (SELECT COUNT(*) FROM @T) <> @esperados
     INSERT @T (Teste, Ok, Detalhe)
     VALUES ('9.99 Numero de testes executados = esperado', 0, CONCAT('executados=', (SELECT COUNT(*) FROM @T), '; esperados=', @esperados));
