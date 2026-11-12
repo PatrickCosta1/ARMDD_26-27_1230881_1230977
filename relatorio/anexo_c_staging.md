@@ -1,6 +1,6 @@
 # Anexo C — Estruturas da Staging Area
 
-A Staging Area tem 15 tabelas na base de dados `MoreRhythm_STG`: três de apoio (C.1) e as 12 tabelas `stg_<origem>`, uma por tabela de negócio da origem. As tabelas `stg_<origem>` partilham as nove colunas técnicas de C.2; as colunas de negócio de cada uma (C.3) têm o mesmo nome, tipo, precisão e nulabilidade da origem. A definição executável está em `mappings/03_ddl_staging_area.sql` e `mappings/05_ddl_staging_tabelas_tipadas.sql`, e os testes da estrutura em `mappings/06_testes_staging.sql`.
+A Staging Area tem 20 tabelas na base de dados `MoreRhythm_STG`: duas de apoio (C.1), as 12 tabelas `stg_<origem>`, uma por tabela de negócio da origem (C.2 e C.3), e as 6 tabelas de rejeição `dqp_<origem>` (C.4). As tabelas `stg_<origem>` partilham as nove colunas técnicas de C.2; as colunas de negócio de cada uma (C.3) têm o mesmo nome, tipo, precisão e nulabilidade da origem. A definição executável está em `mappings/03_ddl_staging_area.sql` e `mappings/05_ddl_staging_tabelas_tipadas.sql`, e os testes da estrutura em `mappings/06_testes_staging.sql`.
 
 ## C.1 Tabelas de apoio
 
@@ -17,20 +17,6 @@ A Staging Area tem 15 tabelas na base de dados `MoreRhythm_STG`: três de apoio 
 | `rows_validated` | `int` | N | Registos validados |
 | `rows_rejected` | `int` | N | Registos rejeitados |
 | `error_message` | `nvarchar(2000)` | S | Mensagem de erro, se falhou |
-
-**`stg_rejections`** — Registos rejeitados, com os valores originais em JSON. Uma linha por registo e por regra violada.
-
-| Coluna | Tipo | Nulável | Descrição |
-|---|---|---|---|
-| `rejection_id` | `bigint` | N | Identificador; chave primária (IDENTITY) |
-| `load_id` | `bigint` | N | Execução de carga (FK para `stg_load_control`) |
-| `source_table` | `sysname` | N | Tabela de origem |
-| `source_pk` | `nvarchar(250)` | N | Chave primária da origem, serializada |
-| `raw_row_json` | `nvarchar(max)` | N | Valores originais do registo, em JSON |
-| `validation_rule` | `varchar(10)` | N | Regra violada (R01 a R11) |
-| `validation_message` | `nvarchar(1000)` | N | Descrição do problema |
-| `rejected_at` | `datetime2(3)` | N | Instante da rejeição |
-| `resolution_status` | `varchar(20)` | N | `OPEN` (por omissão), `RESOLVED` ou `CANCELLED` |
 
 **`stg_customer_duplicate_groups`** — Clientes duplicados (R01). Uma linha por cliente de origem que pertence a um grupo; a decisão é persistente.
 
@@ -54,12 +40,12 @@ A Staging Area tem 15 tabelas na base de dados `MoreRhythm_STG`: três de apoio 
 | `stg_row_id` | `bigint` | N | Identificador técnico da cópia (IDENTITY); chave primária |
 | `load_id` | `bigint` | N | Execução de carga (FK para `stg_load_control`) |
 | `source_table` | `sysname` | N | Tabela de origem; valor por omissão e restrição CHECK com o nome da tabela |
-| `source_pk` | `nvarchar(250)` | N | Chave primária da origem, no formato `coluna=valor` (colunas por ordem alfabética, separadas por `\|`) |
+| `source_pk` | `nvarchar(250)` | N | Chave primária da origem, no formato `coluna=valor` (colunas por ordem alfabética, separadas por `|`) |
 | `extraction_timestamp` | `datetime2(3)` | N | Instante (UTC) da extração |
 | `validation_status` | `varchar(20)` | N | `VALID`, `CORRIGIDO`, `PENDING` (por omissão) ou `REJECTED` |
 | `validation_rule` | `varchar(10)` | S | Regra (R01 a R11) que originou o estado, quando aplicável |
 | `validation_message` | `nvarchar(1000)` | S | Descrição legível do problema |
-| `raw_row_hash` | `varbinary(32)` | N | *Hash* SHA2_256 dos valores de origem (idempotência) |
+| `raw_row_hash` | `varbinary(32)` | N | *Hash* SHA2_256 dos valores de origem (usado nas tabelas sem auditoria fiável) |
 
 Cada tabela tem ainda a restrição `UNIQUE (load_id, source_pk)`: a mesma chave pode repetir-se em lotes diferentes, mas não no mesmo.
 
@@ -275,3 +261,15 @@ Cada tabela tem ainda a restrição `UNIQUE (load_id, source_pk)`: a mesma chave
 | `create_time` | `time(7)` | N |  |
 | `last_update_date` | `date` | N |  |
 | `last_update_time` | `time(7)` | N |  |
+
+## C.4 Tabelas de rejeição `dqp_<origem>`
+
+As tabelas `dqp_customers`, `dqp_suplliers`, `dqp_products`, `dqp_invoices`, `dqp_invoices_lines` e `dqp_purchases_lines` guardam os registos rejeitados (padrão DQP, *Data Quality Problems*, das aulas práticas). Cada uma tem as cinco colunas seguintes e, a seguir, todas as colunas de negócio da tabela de origem correspondente, com o mesmo nome, tipo, precisão e nulabilidade (C.3).
+
+| Coluna | Tipo | Nulável | Descrição |
+|---|---|---|---|
+| `dqp_row_id` | `bigint` | N | Identificador do registo rejeitado (IDENTITY); chave primária |
+| `load_id` | `bigint` | N | Execução de carga (FK para `stg_load_control`) |
+| `extraction_timestamp` | `datetime2(3)` | N | Instante (UTC) em que o registo foi guardado |
+| `validation_rule` | `varchar(10)` | N | Regra violada (R03 a R11) |
+| `DQP` | `nvarchar(1000)` | N | Descrição do problema de qualidade |

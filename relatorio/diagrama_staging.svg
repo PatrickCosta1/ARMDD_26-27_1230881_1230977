@@ -19,7 +19,7 @@
 
   <!-- Staging -->
   <rect x="290" y="60" width="400" height="300" rx="8" fill="#fff6e5" stroke="#c77700" stroke-width="2"/>
-  <text x="490" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#8a5200">Staging Area · BD MoreRhythm_STG · 15 tabelas</text>
+  <text x="490" y="88" text-anchor="middle" font-size="14" font-weight="700" fill="#8a5200">Staging Area · BD MoreRhythm_STG · 20 tabelas</text>
 
   <rect x="306" y="102" width="368" height="86" rx="5" fill="#fff" stroke="#c77700"/>
   <text x="490" y="124" text-anchor="middle" font-size="13" font-weight="700" fill="#333">12 tabelas stg_&lt;origem&gt;</text>
@@ -28,8 +28,8 @@
   <text x="490" y="180" text-anchor="middle" font-size="12" fill="#333">raw_row_hash · UNIQUE (load_id, source_pk)</text>
 
   <rect x="306" y="212" width="368" height="46" rx="5" fill="#fff" stroke="#b3261e"/>
-  <text x="490" y="232" text-anchor="middle" font-size="13" font-weight="700" fill="#333">stg_rejections</text>
-  <text x="490" y="250" text-anchor="middle" font-size="12" fill="#333">regra violada + valores originais em JSON (só rejeitados)</text>
+  <text x="490" y="232" text-anchor="middle" font-size="13" font-weight="700" fill="#333">6 tabelas dqp_&lt;origem&gt;</text>
+  <text x="490" y="250" text-anchor="middle" font-size="12" fill="#333">registos rejeitados: atributos de origem + regra + problema</text>
 
   <rect x="306" y="270" width="368" height="46" rx="5" fill="#fff" stroke="#c77700"/>
   <text x="490" y="290" text-anchor="middle" font-size="13" font-weight="700" fill="#333">stg_customer_duplicate_groups</text>
@@ -64,5 +64,5 @@
 
   <text x="550" y="404" text-anchor="middle" font-size="12" fill="#444">Não há ficheiros de dados na Staging: as estruturas são tabelas SQL Server, no mesmo servidor do Data Mart.</text>
   <text x="550" y="424" text-anchor="middle" font-size="12" fill="#444">Os registos rejeitados ficam na Staging e não são carregados no Data Mart; a sua correção está fora do âmbito do trabalho.</text>
-  <text x="550" y="444" text-anchor="middle" font-size="12" fill="#444">O único ficheiro associado é o de parametrização do projeto SSIS (servidores, bases de dados e caminhos).</text>
+  <text x="550" y="444" text-anchor="middle" font-size="12" fill="#444">Os ficheiros do projeto são os scripts SQL de criação das estruturas e o ficheiro de parâmetros do projeto SSIS.</text>
 </svg>
