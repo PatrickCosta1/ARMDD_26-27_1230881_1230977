@@ -198,16 +198,21 @@ def svg_para_pdf(svg, pdf):
         h_path = os.path.join(tmp, "f.html")
         with open(h_path, "w", encoding="utf-8") as f:
             f.write(html)
-        r = subprocess.run([nav, "--headless", "--disable-gpu", "--no-pdf-header-footer", "--user-data-dir=" + os.path.join(tmp, "p"),
-                            "--print-to-pdf=" + pdf, "file:///" + h_path.replace("\\", "/")],
-                           capture_output=True, timeout=120)
+        try:
+            r = subprocess.run([nav, "--headless", "--disable-gpu", "--no-pdf-header-footer", "--user-data-dir=" + os.path.join(tmp, "p"),
+                                "--print-to-pdf=" + pdf, "file:///" + h_path.replace("\\", "/")],
+                               capture_output=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            # o navegador pode ficar preso depois de escrever o PDF: seguir se o ficheiro ja existe e estabiliza
+            print("AVISO: o navegador excedeu o tempo; a verificar se o PDF foi escrito", file=sys.stderr)
+            r = None
         # esperar que o PDF exista antes de apagar o perfil temporario do navegador
         for _ in range(40):
             if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
                 break
             time.sleep(0.5)
         if not os.path.exists(pdf):
-            raise SystemExit("O navegador nao gerou %s (codigo %s): %s" % (pdf, r.returncode, r.stderr.decode(errors="replace")[:400]))
+            raise SystemExit("O navegador nao gerou %s (codigo %s): %s" % (pdf, getattr(r, "returncode", "tempo excedido"), (r.stderr if r else b"").decode(errors="replace")[:400]))
     # o navegador escreve o PDF de forma assincrona: esperar que exista e que o tamanho estabilize
     anterior, estavel = -1, 0
     for _ in range(60):

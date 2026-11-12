@@ -139,7 +139,7 @@ Origem: `customers` + `zones` + `stg_customer_duplicate_groups`. **Uma linha por
 | Morada | nvarchar(55) | — | **S** | Morada | 1 |
 | Codigo_Postal | varchar(45) | — | **S** | Código postal | 1 |
 | Cidade | nvarchar(43) | — | N | Cidade (`customers.clity`) | **2** |
-| Zona | nvarchar(50) | — | N | Norte, Centro, Sul, Ilhas, Espanha (`zones.zone`). `customers.zone` é nulável na origem (2 clientes na amostra): sem zona → `Zona desconhecida`, nunca inferida | **2** |
+| Zona | nvarchar(50) | — | N | Norte, Centro, Sul, Ilhas, Espanha (`zones.zone`). `customers.zone` é nulável na origem (2 clientes na amostra): sem zona → o cliente é rejeitado (R03) e não carrega; a zona nunca se infere | **2** |
 | Pais | nvarchar(30) | — | N | Portugal / Espanha (derivado da zona) | 2 (com a zona) |
 | Tipo_Cliente | nvarchar(20) | — | N | Cliente Final, Revendedor, Funcionário, Interno | **2** |
 | Segmento | nvarchar(25) | — | N | Alto, Médio, Baixo | **2** |
@@ -202,7 +202,7 @@ Origem: `suplliers` + `zones`. O fornecedor associa-se à linha **via produto** 
 | Dias_Pagamento | smallint | — | **S** | Prazo de pagamento | 1 |
 | Data_Inicio / Data_Fim / Versao_Atual | date / date / bit | — | N | Controlo SCD2 | — |
 
-**Hierarquia geográfica:** Zona > Cidade > Fornecedor. A Zona é nulável na origem: nesses casos usa-se "Zona desconhecida".
+**Hierarquia geográfica:** Zona > Cidade > Fornecedor. A Zona é nulável na origem: nesses casos (fornecedores 3 e 13, sem vendas) usa-se "Zona desconhecida".
 
 ### 3.6 `Dim_Funcionario`
 
@@ -290,15 +290,15 @@ O enunciado exige eliminar as redundâncias, iguais ou aproximadas. O profiling 
 
 ## 6.1 Tratamento de dados em falta e inválidos (alinhado com as regras R01–R11 do Patrick)
 
-Princípio comum: **atributo descritivo em falta → membro "Desconhecido" (visível, não esconde a venda)**; **identificador, medida ou integridade comprometida → registo rejeitado para a Staging** (fora do Data Mart).
+Princípio comum: **atributo descritivo opcional em falta (por exemplo o fornecedor de um produto ou os contactos) → membro "Desconhecido" ou `NULL` (a venda continua visível)**; **atributo de que as análises dependem (zona do cliente; designação, família e categoria do produto), identificador, medida ou integridade comprometida → registo rejeitado para a Staging** (fora do Data Mart). Uma fatura que aponta para um cliente ou produto rejeitado é também rejeitada (R08).
 
 | Situação (amostra) | Regra | Tratamento no Data Mart |
 |---|---|---|
 | 12 produtos sem fornecedor (R04) | Fornecedor é descritivo | `SK_Fornecedor = −1` ("Sem fornecedor"); a venda é carregada |
-| 2 clientes sem zona (R03) | Zona não se infere | `Zona = 'Zona desconhecida'` (e `Pais = 'Desconhecido'`) |
+| 2 clientes sem zona (R03) | A zona não se infere e as análises dependem dela | **Cliente rejeitado**; as suas faturas também (R08). Sem faturas na amostra (clientes 2 e 20) |
 | 4 clientes com NIF não identificativo: em branco, `0`, `00`, `000000000` (R02) | NIF não identifica | `NIF = 'N/D'`; fora da deteção de duplicados |
 | Email ou telemóvel em falta, ou email com formato inválido (R02: 1 cliente e 2 funcionários) | Atributos opcionais | Ficam `NULL`; o valor original fica na Staging |
-| 2 produtos sem designação/família/categoria (R04) | Descritivos | Carregados em `Dim_Produto` com "Desconhecida"; sem vendas na amostra |
+| 2 produtos sem designação/família/categoria (R04) | As análises dependem da família e da categoria | **Produto rejeitado**; as suas linhas também (R08). Sem vendas na amostra (`Z001` e `CORSR`) |
 | 4 linhas de fatura com `line_total ≠ quantidade × preço` (R06) | Sinal incerto | **Rejeitar a fatura** enquanto a regra de sinal não for confirmada (ver abaixo) |
 | 2 faturas com cabeçalho ≠ soma das linhas (R07) | Valor correto desconhecido | **Rejeitar a fatura** |
 | 2 faturas com `final_total ≠ produtos + frete + IVA` (R11): `shipping_cost` excede em 2,50 e 5,00 o frete incluído no total | Qual dos fretes é o efetivo é desconhecido | **Rejeitar a fatura** |
@@ -316,7 +316,7 @@ Todas as 10 análises estão cobertas pelas dimensões e atributos descritos na 
 
 1. As **4 linhas de fatura** com quantidade ou preço negativo ficam rejeitadas até confirmação da semântica; não são convertidas para positivos.
 2. As **2 faturas** com cabeçalho diferente da soma das linhas (R07) e as **2** com frete incoerente (R11) são rejeitadas integralmente. No conjunto são 7 faturas de 37 (4 989,88; 10,1 % do valor).
-3. Um atributo descritivo em falta usa o membro `Desconhecido`; uma chave, medida ou relação inválida é rejeitada na Staging.
+3. Um atributo descritivo opcional em falta usa o membro `Desconhecido` ou `NULL`; um atributo de que as análises dependem (zona do cliente, designação, família e categoria do produto), uma chave, uma medida ou uma relação inválida leva à rejeição na Staging.
 4. Os clientes duplicados (10/18, 8/22 e 5/26) são consolidados num sobrevivente, com mapa persistente e `BK_Cliente_Origem` no facto; o enunciado exige eliminar duplicados iguais ou aproximados.
 5. **Vendas com IVA** significa `Valor_Liquido + Valor_IVA`, sem frete. O frete só entra em `Total_Faturado` e nas análises de frete.
 6. A classificação de produto usa `products.classification`; quando ausente, usa `families.classification` apenas como fallback documentado e marca a origem do valor.

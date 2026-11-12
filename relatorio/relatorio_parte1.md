@@ -279,15 +279,13 @@ Na amostra só existe a moeda `EURO`, mapeada para `EUR`. A estrutura e a moeda 
 | Linhas de fatura com sinal negativo (4) | A fatura é rejeitada até o negócio confirmar a regra | Carregar como devoluções |
 | Significado de `payment_date` | É sempre preenchida e posterior à fatura, pelo que pode ser uma data de vencimento | Data de pagamento |
 | `shipping_cost` das 2 faturas com total incoerente | A fatura é rejeitada, porque não se sabe qual dos dois fretes é o efetivo | Carregar com o valor do cabeçalho |
-| Clientes sem zona e produtos sem atributos | Decidido: rejeitar; na amostra não afeta nenhuma fatura (clientes 2 e 20; produtos Z001 e CORSR) | Carregar como "Desconhecida" |
-| Origem das taxas de câmbio | Decidido: só euros nesta fase; GBP e ficheiro de cotações como extensão | Implementar já as cotações |
+| Clientes sem zona e produtos sem atributos | Assumido; a confirmar com o docente: rejeitar (R03, R04 e R08); na amostra não afeta nenhuma fatura (clientes 2 e 20; produtos Z001 e CORSR) | Carregar como "Desconhecida" |
+| Origem das taxas de câmbio | Assumido; a confirmar com o docente: só euros nesta fase; GBP e ficheiro de cotações como extensão | Implementar já as cotações |
 | Fornecedores 8 e 14, com o mesmo NIF | Estabelecimentos distintos, não consolidados | Fundir |
 
 ## Expansão e IVA por país
 
-**[CONFIRMAR: toda esta secção é raciocínio meu sobre o modelo; não é decisão do grupo nem está no repositório. Discutam e adaptem]**
-
-A sucursal no Reino Unido pode exigir mais do que moeda. Hoje o país do cliente deriva da zona, o que basta para analisar as vendas por país. Se as vendas da sucursal forem emitidas por uma entidade diferente, justifica-se uma dimensão própria de sucursal; enquanto a empresa fatura a partir de uma única entidade, o país e a moeda chegam. O IVA também varia por país. Hoje a taxa é um atributo do produto, com histórico, o que é suficiente com uma única taxa. Com vários países a taxa passa a depender do produto e do país. No entanto, as análises não dependem dela, porque o facto guarda o IVA efetivamente faturado em cada linha; a taxa só seria necessária para validar esses valores.
+Duas considerações sobre a expansão, que não são decisões desta fase. O país do cliente deriva hoje da zona, o que basta para analisar as vendas por país; se a sucursal do Reino Unido passar a faturar a partir de uma entidade própria, poderá justificar-se uma dimensão de sucursal. O IVA também varia por país: a taxa já é um atributo do produto, com histórico, e com vários países passaria a depender também do país. As análises não dependem dela, porque o facto guarda o IVA efetivamente faturado em cada linha.
 
 ## Clientes internos e funcionários
 
@@ -295,7 +293,7 @@ A amostra tem três clientes do tipo "Interno" (a própria empresa e as suas fil
 
 ## Limitações conhecidas
 
-- As estações do ano usam datas fixas (20/03, 21/06, 23/09 e 21/12); os equinócios e solstícios reais variam um dia entre anos, sem efeito nas análises pedidas. **[CONFIRMAR: a afirmação de que a diferença não afeta as análises é minha; confirmar com as datas reais de 2025]**
+- As estações do ano usam datas fixas (20/03, 21/06, 23/09 e 21/12). Em 2025, o equinócio de março (20/03) e os solstícios de junho (21/06) e de dezembro (21/12) coincidem com elas; o equinócio de setembro foi a 22/09, um dia antes da data usada. A análise que usa estações (a 8, primavera) não é afetada.
 - A origem não regista eliminações, pelo que os registos apagados na origem não são detetados.
 - Um duplicado detetado depois de os dois clientes já estarem carregados exige reapontar as faturas já carregadas; o cliente de origem guardado no facto permite fazê-lo, e fica especificado, mas não é implementado nesta fase.
 - O fornecedor da linha de fatura reflete o produto na altura da carga e não é historiado.
