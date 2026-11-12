@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 836 1057" font-family="Segoe UI, Arial, sans-serif">
+<rect width="836" height="1057" fill="#fff"/>
+<text x="418.0" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#222">Data Mart de Vendas — esquema em estrela</text>
+<rect x="295" y="300" width="245" height="435" rx="4" fill="#fff" stroke="#b3261e" stroke-width="2"/>
+<rect x="295" y="300" width="245" height="28" rx="4" fill="#b3261e"/>
+<text x="417" y="319" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Fact_Vendas</text>
+<text x="303" y="346" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Venda</text>
+<text x="303" y="365" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Data_Fatura</text>
+<text x="303" y="384" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Data_Pagamento</text>
+<text x="303" y="403" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Cliente</text>
+<text x="303" y="422" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Produto</text>
+<text x="303" y="441" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Fornecedor</text>
+<text x="303" y="460" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Funcionario</text>
+<text x="303" y="479" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">FK  SK_Moeda</text>
+<text x="303" y="498" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">DD  Numero_Fatura</text>
+<text x="303" y="517" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">UK  BK_Linha_Fatura</text>
+<text x="303" y="536" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Cliente_Origem</text>
+<text x="303" y="555" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Quantidade</text>
+<text x="303" y="574" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Preco_Unitario</text>
+<text x="303" y="593" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Valor_Liquido</text>
+<text x="303" y="612" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Valor_IVA</text>
+<text x="303" y="631" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Frete_Alocado</text>
+<text x="303" y="650" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Taxa_Cambio</text>
+<text x="303" y="669" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Valor_Liquido_EUR</text>
+<text x="303" y="688" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Valor_IVA_EUR</text>
+<text x="303" y="707" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Frete_Alocado_EUR</text>
+<text x="303" y="726" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">ID_Lote_ETL</text>
+<rect x="26" y="50" width="205" height="283" rx="4" fill="#fff" stroke="#2e4053" stroke-width="2"/>
+<rect x="26" y="50" width="205" height="28" rx="4" fill="#2e4053"/>
+<text x="128" y="69" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Data (2 papéis)</text>
+<text x="34" y="96" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Data (yyyymmdd)</text>
+<text x="34" y="115" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data</text>
+<text x="34" y="134" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Dia_Semana</text>
+<text x="34" y="153" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Fim_Semana</text>
+<text x="34" y="172" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Ultimo_Dia_Mes</text>
+<text x="34" y="191" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Semana_Ano</text>
+<text x="34" y="210" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Mes</text>
+<text x="34" y="229" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Trimestre</text>
+<text x="34" y="248" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Quadrimestre</text>
+<text x="34" y="267" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Semestre</text>
+<text x="34" y="286" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Estacao_Ano</text>
+<text x="34" y="305" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Ano</text>
+<text x="34" y="324" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Feriado_Nacional</text>
+<rect x="26" y="360" width="205" height="283" rx="4" fill="#fff" stroke="#2980b9" stroke-width="2"/>
+<rect x="26" y="360" width="205" height="28" rx="4" fill="#2980b9"/>
+<text x="128" y="379" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Cliente (SCD 1 e 2)</text>
+<text x="34" y="406" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Cliente</text>
+<text x="34" y="425" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Cliente</text>
+<text x="34" y="444" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nome</text>
+<text x="34" y="463" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">NIF</text>
+<text x="34" y="482" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Cidade*</text>
+<text x="34" y="501" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Zona*</text>
+<text x="34" y="520" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Pais*</text>
+<text x="34" y="539" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Tipo_Cliente*</text>
+<text x="34" y="558" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Segmento*</text>
+<text x="34" y="577" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Vendedor_Atribuido*</text>
+<text x="34" y="596" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Inicio</text>
+<text x="34" y="615" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Fim</text>
+<text x="34" y="634" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Versao_Atual</text>
+<rect x="26" y="670" width="205" height="226" rx="4" fill="#fff" stroke="#16a085" stroke-width="2"/>
+<rect x="26" y="670" width="205" height="28" rx="4" fill="#16a085"/>
+<text x="128" y="689" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Funcionario (SCD 1 e 2)</text>
+<text x="34" y="716" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Funcionario</text>
+<text x="34" y="735" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Funcionario</text>
+<text x="34" y="754" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nome</text>
+<text x="34" y="773" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Grupo*</text>
+<text x="34" y="792" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Departamento*</text>
+<text x="34" y="811" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Chefe*</text>
+<text x="34" y="830" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nome_Chefe*</text>
+<text x="34" y="849" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Inicio</text>
+<text x="34" y="868" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Fim</text>
+<text x="34" y="887" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Versao_Atual</text>
+<rect x="604" y="50" width="205" height="245" rx="4" fill="#fff" stroke="#8e44ad" stroke-width="2"/>
+<rect x="604" y="50" width="205" height="28" rx="4" fill="#8e44ad"/>
+<text x="706" y="69" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Produto (SCD 1 e 2)</text>
+<text x="612" y="96" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Produto</text>
+<text x="612" y="115" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Produto</text>
+<text x="612" y="134" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Designacao</text>
+<text x="612" y="153" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Familia*</text>
+<text x="612" y="172" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Classificacao_Familia*</text>
+<text x="612" y="191" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Categoria*</text>
+<text x="612" y="210" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Classificacao_Produto*</text>
+<text x="612" y="229" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Taxa_IVA*</text>
+<text x="612" y="248" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Inicio</text>
+<text x="612" y="267" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Fim</text>
+<text x="612" y="286" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Versao_Atual</text>
+<rect x="604" y="330" width="205" height="245" rx="4" fill="#fff" stroke="#d35400" stroke-width="2"/>
+<rect x="604" y="330" width="205" height="28" rx="4" fill="#d35400"/>
+<text x="706" y="349" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Fornecedor (SCD 1 e 2)</text>
+<text x="612" y="376" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Fornecedor</text>
+<text x="612" y="395" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">BK_Fornecedor</text>
+<text x="612" y="414" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nome</text>
+<text x="612" y="433" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">NIF</text>
+<text x="612" y="452" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Tipo_Fornecedor*</text>
+<text x="612" y="471" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Cidade*</text>
+<text x="612" y="490" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Zona*</text>
+<text x="612" y="509" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nacionalidade</text>
+<text x="612" y="528" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Inicio</text>
+<text x="612" y="547" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Data_Fim</text>
+<text x="612" y="566" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Versao_Atual</text>
+<rect x="604" y="610" width="205" height="112" rx="4" fill="#fff" stroke="#7f8c8d" stroke-width="2"/>
+<rect x="604" y="610" width="205" height="28" rx="4" fill="#7f8c8d"/>
+<text x="706" y="629" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Moeda</text>
+<text x="612" y="656" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK  SK_Moeda</text>
+<text x="612" y="675" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Codigo_ISO</text>
+<text x="612" y="694" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Nome</text>
+<text x="612" y="713" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Simbolo</text>
+<rect x="604" y="770" width="205" height="93" rx="4" fill="#fff" stroke="#7f8c8d" stroke-width="2"/>
+<rect x="604" y="770" width="205" height="28" rx="4" fill="#7f8c8d"/>
+<text x="706" y="789" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Dim_Taxa_Cambio</text>
+<text x="612" y="816" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK/FK  SK_Data</text>
+<text x="612" y="835" font-family="Consolas, Courier New, monospace" font-size="13" font-weight="700" fill="#222">PK/FK  SK_Moeda</text>
+<text x="612" y="854" font-family="Consolas, Courier New, monospace" font-size="13" fill="#222">Taxa_Para_EUR</text>
+<text x="706.5" y="880" text-anchor="middle" font-size="11" fill="#222">(tabela de conversão de moeda)</text>
+<line x1="231" y1="95" x2="295" y2="361" stroke="#444" stroke-width="1.6"/>
+<text x="243" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="283" y="356" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="231" y1="125" x2="295" y2="380" stroke="#444" stroke-width="1.6"/>
+<text x="243" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="283" y="375" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="231" y1="410" x2="295" y2="399" stroke="#444" stroke-width="1.6"/>
+<text x="243" y="405" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="283" y="394" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="231" y1="720" x2="295" y2="456" stroke="#444" stroke-width="1.6"/>
+<text x="243" y="715" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="283" y="451" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="604" y1="95" x2="540" y2="418" stroke="#444" stroke-width="1.6"/>
+<text x="592" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="552" y="413" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="604" y1="380" x2="540" y2="437" stroke="#444" stroke-width="1.6"/>
+<text x="592" y="375" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="552" y="432" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="604" y1="650" x2="540" y2="475" stroke="#444" stroke-width="1.6"/>
+<text x="592" y="645" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="552" y="470" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="706" y1="722" x2="706" y2="770" stroke="#444" stroke-width="1.6"/>
+<text x="718.5" y="736" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="718.5" y="764" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<line x1="604" y1="815" x2="540" y2="721" stroke="#444" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="592" y="810" text-anchor="middle" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="552" y="715" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<text x="417.5" y="776" text-anchor="middle" font-size="11" fill="#222">FK composta (SK_Data_Fatura, SK_Moeda)</text>
+<path d="M 706 887 L 706 903 L 8 903 L 8 100 L 26 100" fill="none" stroke="#444" stroke-width="1.6"/>
+<text x="20" y="94" text-anchor="end" font-size="13" font-weight="700" fill="#222">1</text>
+<text x="718.5" y="901" text-anchor="middle" font-size="13" font-weight="700" fill="#222">N</text>
+<text x="417.5" y="897" text-anchor="middle" font-size="11" fill="#222">SK_Data (data da cotação)</text>
+<text x="26" y="943" text-anchor="start" font-size="13" font-weight="700" fill="#222">Legenda</text>
+<text x="26" y="962" text-anchor="start" font-size="11" fill="#222">PK: chave primária     FK: chave estrangeira     UK: chave única     DD: dimensão degenerada</text>
+<text x="26" y="979" text-anchor="start" font-size="11" fill="#222">*: atributo com SCD de tipo 2 (os restantes são de tipo 1)</text>
+<text x="26" y="996" text-anchor="start" font-size="11" fill="#222">1 e N: cardinalidade da relação (uma linha da dimensão para N linhas do facto)</text>
+<text x="26" y="1013" text-anchor="start" font-size="11" fill="#222">Dim_Data tem dois papéis no facto: data da fatura e data de pagamento</text>
+<text x="26" y="1030" text-anchor="start" font-size="11" fill="#222">Dim_Taxa_Cambio tem chave primária composta e é referenciada pelo facto por uma chave estrangeira composta</text>
+</svg>

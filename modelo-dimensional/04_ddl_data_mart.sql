@@ -60,7 +60,7 @@ CREATE TABLE dbo.Dim_Cliente (
     Morada                   nvarchar(55)  NULL,         -- SCD1
     Codigo_Postal            varchar(45)   NULL,         -- SCD1
     Cidade                   nvarchar(43)  NOT NULL,     -- SCD2
-    Zona                     nvarchar(50)  NOT NULL,     -- SCD2 ('Zona desconhecida' se customers.zone NULL)
+    Zona                     nvarchar(50)  NOT NULL,     -- SCD2 (cliente sem zona: rejeitado na Staging, R03)
     Pais                     nvarchar(30)  NOT NULL,     -- SCD2 (derivado da zona; 'Desconhecido' se sem zona)
     Tipo_Cliente             nvarchar(20)  NOT NULL,     -- SCD2
     Segmento                 nvarchar(25)  NOT NULL,     -- SCD2
@@ -115,7 +115,7 @@ CREATE TABLE dbo.Dim_Fornecedor (
     Tipo_Fornecedor          nvarchar(20)  NOT NULL,     -- SCD2
     Nacionalidade            nvarchar(20)  NULL,         -- SCD1
     Cidade                   nvarchar(43)  NOT NULL,     -- SCD2
-    Zona                     nvarchar(50)  NULL,         -- SCD2 (NULL -> 'Zona desconhecida' na carga)
+    Zona                     nvarchar(50)  NOT NULL,     -- SCD2 (fornecedor sem zona: rejeitado na Staging, R03)
     Morada                   nvarchar(55)  NULL,         -- SCD1
     Codigo_Postal            varchar(45)   NULL,         -- SCD1
     Contacto                 nvarchar(30)  NULL,         -- SCD1

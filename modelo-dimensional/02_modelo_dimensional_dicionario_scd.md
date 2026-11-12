@@ -37,7 +37,7 @@ O `shipping_cost` está na fatura, não na linha (em 35 das 37 faturas da amostr
 
 ## 2. Diagrama
 
-Ver [diagrama_modelo_dimensional.png](diagrama_modelo_dimensional.png) e o código Mermaid em [diagrama_modelo_dimensional.mmd](diagrama_modelo_dimensional.mmd).
+Ver [diagrama_modelo_dimensional.svg](diagrama_modelo_dimensional.svg).
 
 ```mermaid
 erDiagram
@@ -77,7 +77,7 @@ Convenções: `Hash_SCD1` / `Hash_SCD2` (`varbinary(32)`, não nulos, nas quatro
 | Preco_Unitario | decimal(19,6) | — | N | Preço unitário, moeda original (não aditivo) | `invoices_lines.unit_price` |
 | Valor_Liquido | decimal(19,6) | — | N | Venda sem IVA e sem frete, moeda original | `invoices_lines.line_total` |
 | Valor_IVA | decimal(19,6) | — | N | IVA da linha, moeda original | `invoices_lines.line_vat` |
-| Frete_Alocado | decimal(19,6) | — | N | Frete repartido pela linha, moeda original | calculado (ver §1) |
+| Frete_Alocado | decimal(19,6) | — | N | Frete repartido pela linha, moeda original | calculado (ver «Custo de expedição») |
 | Taxa_Cambio | decimal(18,8) | — | N | Taxa moeda original → EUR no dia da fatura | `Dim_Taxa_Cambio` |
 | Valor_Liquido_EUR | decimal(19,6) | — | N | `Valor_Liquido × Taxa_Cambio` | calculado |
 | Valor_IVA_EUR | decimal(19,6) | — | N | `Valor_IVA × Taxa_Cambio` | calculado |
@@ -89,7 +89,7 @@ Convenções: `Hash_SCD1` / `Hash_SCD2` (`varbinary(32)`, não nulos, nas quatro
 
 `SK_Data_Pagamento` usa SK −1 ("sem data") quando a fatura ainda não foi paga.
 
-**Restrições físicas adicionais** (ver [04_ddl_data_mart.sql](04_ddl_data_mart.sql)): FK composta `(SK_Data_Fatura, SK_Moeda) → Dim_Taxa_Cambio`, que impede carregar uma linha sem taxa de câmbio no dia da fatura (regra 7 da Fase 1); `CK_Fact_Taxa_Positiva` (`Taxa_Cambio > 0`); `CK_Fact_Fatura_Dia` (`SK_Data_Fatura <> −1`, a data da fatura é obrigatória).
+**Restrições físicas adicionais** (ver [04_ddl_data_mart.sql](04_ddl_data_mart.sql)): FK composta `(SK_Data_Fatura, SK_Moeda) → Dim_Taxa_Cambio`, que impede carregar uma linha sem taxa de câmbio no dia da fatura (decisão sobre a moeda, em «Contrato de carregamento e decisões fechadas»); `CK_Fact_Taxa_Positiva` (`Taxa_Cambio > 0`); `CK_Fact_Fatura_Dia` (`SK_Data_Fatura <> −1`, a data da fatura é obrigatória).
 
 ### 3.2 `Dim_Data` (papéis: Data da Fatura, Data de Pagamento)
 
@@ -118,20 +118,20 @@ Carregada uma só vez (por exemplo 2020–2035). **Sem SCD** (valores imutáveis
 | Feriado_Nacional | bit | — | N | 1 se feriado em Portugal |
 | Nome_Feriado | varchar(60) | — | **S** | Preenchido só nos feriados |
 
-**Estações** (hemisfério Norte, datas astronómicas): Primavera 20/03–20/06 · Verão 21/06–22/09 · Outono 23/09–20/12 · Inverno 21/12–19/03. Os dias de transição variam de ano para ano e ficam registados na tabela em cada ano.
+**Estações** (hemisfério Norte, datas fixas em todos os anos): Primavera 20/03–20/06 · Verão 21/06–22/09 · Outono 23/09–20/12 · Inverno 21/12–19/03. Os equinócios e solstícios reais variam um dia entre anos (ver «Decisões em aberto e limitações»).
 
 Membro especial: SK = −1 ("Sem data"), usado em `SK_Data_Pagamento` quando não há pagamento.
 
 ### 3.3 `Dim_Cliente`
 
-Origem: `customers` + `zones` + `stg_customer_duplicate_groups`. **Uma linha por cliente real:** os duplicados (pares 10/18, 8/22 e 5/26) são consolidados no sobrevivente, e a chave de negócio é a do sobrevivente (ver §6).
+Origem: `customers` + `zones` + `stg_customer_duplicate_groups`. **Uma linha por cliente real:** os duplicados (pares 10/18, 8/22 e 5/26) são consolidados no sobrevivente, e a chave de negócio é a do sobrevivente (ver a secção «Clientes duplicados»).
 
 | Coluna | Tipo | PK/FK | Nulável | Descrição | SCD |
 |---|---|---|---|---|---|
 | SK_Cliente | int IDENTITY | PK | N | Chave substituta | — |
 | BK_Cliente | numeric(10,0) | — | N | `COALESCE(survivor_customer_number, number)` | — |
 | Nome | nvarchar(55) | — | N | Nome | 1 |
-| NIF | varchar(20) | — | N | `taxpayer_number` (chave de deteção de duplicados). Vazio ou só zeros → `N/D` (4 clientes na amostra: um em branco, `0`, `00` e `000000000`) | 1 |
+| NIF | varchar(20) | — | N | `taxpayer_number` (um dos atributos usados na deteção de duplicados). Vazio ou só zeros → `N/D` (4 clientes na amostra: um em branco, `0`, `00` e `000000000`) | 1 |
 | Contacto | nvarchar(30) | — | **S** | Pessoa de contacto | 1 |
 | Email | varchar(45) | — | **S** | Email; vazio ou com formato inválido (por exemplo `coro.sapo.pt`) → `NULL` (R02); o valor original fica na Staging | 1 |
 | Telefone | varchar(60) | — | **S** | `phone` | 1 |
@@ -195,14 +195,14 @@ Origem: `suplliers` + `zones`. O fornecedor associa-se à linha **via produto** 
 | Tipo_Fornecedor | nvarchar(20) | — | N | Material / Serviços | **2** |
 | Nacionalidade | nvarchar(20) | — | **S** | Vazia nalguns registos | 1 |
 | Cidade | nvarchar(43) | — | N | Cidade | **2** |
-| Zona | nvarchar(50) | — | **S** | Zona do fornecedor (análise 10) | **2** |
+| Zona | nvarchar(50) | — | N | Zona do fornecedor (análise 10). Sem zona → o fornecedor é rejeitado (R03), como o cliente | **2** |
 | Morada / Codigo_Postal | nvarchar(55) / varchar(45) | — | **S** | Endereço | 1 |
 | Contacto / Cargo_Contacto | nvarchar(30) / nvarchar(15) | — | **S** | Pessoa de contacto e cargo | 1 |
 | Email / Telefone / Telemovel | varchar | — | **S** | Contactos | 1 |
 | Dias_Pagamento | smallint | — | **S** | Prazo de pagamento | 1 |
 | Data_Inicio / Data_Fim / Versao_Atual | date / date / bit | — | N | Controlo SCD2 | — |
 
-**Hierarquia geográfica:** Zona > Cidade > Fornecedor. A Zona é nulável na origem: nesses casos (fornecedores 3 e 13, sem vendas) usa-se "Zona desconhecida".
+**Hierarquia geográfica:** Zona > Cidade > Fornecedor. A zona é nulável na origem (fornecedores 3 e 13, sem produtos nem vendas): como a análise 10 depende da zona do fornecedor, aplica-se a mesma regra dos clientes e o fornecedor não carrega (R03).
 
 ### 3.6 `Dim_Funcionario`
 
@@ -266,7 +266,7 @@ A origem regista data/hora de criação e de cada alteração (`create_*`, `last
 | **SCD 2** (nova versão) | Atributos que **classificam** o facto e cuja mudança alteraria relatórios passados: zona, cidade, tipo, segmento, vendedor (cliente); família, categoria, classificação, taxa de IVA (produto); zona, cidade, tipo (fornecedor); grupo, departamento, chefe (funcionário) | Fecha a versão atual (`Data_Fim`, `Versao_Atual = 0`) e cria outra |
 | Sem SCD | `Dim_Data`, `Dim_Taxa_Cambio` | Imutáveis |
 
-**Convenção de vigência (garantida por restrições físicas):** a 1.ª versão de cada BK começa em `1900-01-01`, para que factos históricos encontrem versão; ao abrir uma nova versão, a anterior fecha com `Data_Fim = Data_Inicio_nova − 1 dia` (intervalos sem sobreposição, pesquisa por `BETWEEN`). `CK_Dim_*_Vigencia` impõe `Data_Fim ≥ Data_Inicio` e `Versao_Atual = 1 ⇔ Data_Fim = 9999-12-31`; o índice único filtrado `IX_Dim_*_Atual` impede duas versões correntes do mesmo BK.
+**Convenção de vigência (garantida por restrições físicas):** a 1.ª versão de cada BK começa em `1900-01-01`, porque a origem não guarda os valores antigos e a primeira versão tem de cobrir todo o passado; ao abrir uma nova versão, a anterior fecha com `Data_Fim = Data_Inicio_nova − 1 dia` (intervalos sem sobreposição). `CK_Dim_*_Vigencia` impõe `Data_Fim ≥ Data_Inicio` e `Versao_Atual = 1 ⇔ Data_Fim = 9999-12-31`; o índice único filtrado `IX_Dim_*_Atual` impede duas versões correntes do mesmo BK.
 
 **Justificações-chave:**
 
@@ -274,8 +274,8 @@ A origem regista data/hora de criação e de cada alteração (`create_*`, `last
 - **Produto com SCD 2 em família/categoria:** uma reclassificação não pode mover vendas históricas de categoria (análises 1, 5, 9).
 - **Funcionário com SCD 2 em grupo/departamento:** permite avaliar o desempenho do funcionário no cargo que tinha na altura.
 - **Preços fora das dimensões:** o preço real de venda está no facto; um `preco_atual` na dimensão geraria versões a cada alteração sem valor analítico.
-- **Facto:** cada linha aponta para a **versão da dimensão vigente na data da fatura**. A pesquisa de SK na carga usa `Data_Fatura BETWEEN Data_Inicio AND Data_Fim`.
-- **Atrasos:** se um facto chegar com data anterior à da versão atual (alteração retroativa), usa-se a versão cujo intervalo contém a data da fatura.
+- **Facto:** cada linha aponta para a **versão corrente da dimensão no momento da carga** (`Versao_Atual = 1`), como no tutorial da tabela de factos. Como as faturas são carregadas quando existem, é a versão vigente na data da fatura.
+- **Alterações retroativas:** uma alteração retroativa a um atributo de tipo 2 não reaponta factos já carregados; fica como limitação conhecida.
 
 ## 6. Clientes duplicados
 

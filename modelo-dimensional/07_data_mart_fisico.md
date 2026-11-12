@@ -40,6 +40,7 @@ O `04_ddl_data_mart.sql` cria `MoreRhythm_DM` por omissão; o nome é configurá
 | `CK_Dim_*_Vigencia` | Impede versões incoerentes (`Data_Fim < Data_Inicio`; versão fechada com `9999-12-31`; versão corrente com data de fim) |
 | FK composta facto → `Dim_Taxa_Cambio` | Aplica a regra "sem taxa de câmbio, o registo é rejeitado" na própria base de dados |
 | `Dim_Funcionario.Email` passa a aceitar `NULL` | Os funcionários 2 e 5 têm emails com dois `@`; a regra R02 trata-os como ausentes (`NULL`) e a coluna era `NOT NULL`, o que faria falhar a carga desses registos |
+| `Dim_Fornecedor.Zona` passa a `NOT NULL` | Um fornecedor sem zona é rejeitado na Staging (R03), como um cliente sem zona; a análise 10 depende da zona do fornecedor. Na amostra são os fornecedores 3 e 13, sem produtos nem vendas |
 | `BK_Cliente_Origem numeric(10,0) NOT NULL` e índice `IX_Fact_Cliente_Origem` em `Fact_Vendas` | Os clientes duplicados são consolidados na dimensão (`stg_customer_duplicate_groups`); o facto guarda o cliente de origem da fatura, para rastreabilidade e para reapontar faturas se um duplicado só for detetado numa carga posterior |
 | `BK_Cliente` e `BK_Fornecedor` para `numeric(10,0)`; `BK_Funcionario` e `BK_Chefe` para `numeric(6,0)` | Alinhar com os tipos da origem (`customers.number`, `suplliers.number`: `numeric(10,0)`; `employees.number`, `chief`: `numeric(6,0)`); os tipos anteriores eram mais estreitos que o domínio da origem |
 | `CK_Fact_Taxa_Positiva`, `CK_Fact_Fatura_Dia` | Taxa positiva; a data da fatura é sempre uma data real |
