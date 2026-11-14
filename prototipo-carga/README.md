@@ -4,7 +4,7 @@ Esta pasta contém a lógica da carga Staging → Data Mart escrita em T-SQL e t
 das regras descritas na secção "Processo ETL: carga do Data Mart" do relatório.
 
 **O que é:** procedimentos que carregam as quatro dimensões (SCD1 e SCD2 por *hash*, com o cliente consolidado pelo mapa de duplicados) e
-`Fact_Vendas` (chaves pela data da fatura, frete, euros e *upsert*), mais testes de reconciliação, de repetição da carga, de SCD e de duplicados.
+`Fact_Vendas` (chaves pela versão corrente das dimensões, frete, euros e *upsert*), mais testes de reconciliação, de repetição da carga, de SCD e de duplicados.
 
 **O que não é:** o processo em SSIS, que será construído na 2.ª parte. Em vez das tabelas `stg_<origem>` (ainda sem dados), o protótipo copia as
 tabelas da `MoreRhythm` para tabelas `src_<origem>` dentro da própria base de teste e aplica as regras sobre elas. Corre **só numa base de dados
@@ -12,9 +12,9 @@ descartável**; nunca altera a `MoreRhythm` (só a lê).
 
 ## Como correr
 
-Requisitos: SQL Server com a base `MoreRhythm` anexada e o cliente `sqlcmd`. A partir da raiz do repositório (autenticação Windows):
+Requisitos: SQL Server 2017 ou superior (usa `STRING_AGG`, `DROP TABLE IF EXISTS` e `CREATE OR ALTER`), com a base `MoreRhythm` anexada, e o cliente `sqlcmd`. A partir da raiz do repositório (autenticação Windows):
 
-1. Criar o esquema do Data Mart e carregar o calendário (cria a base `MoreRhythm_DM`; use-a só para este teste):
+1. Criar o esquema do Data Mart e carregar o calendário. O `04_ddl_data_mart.sql` cria sempre a base `MoreRhythm_DM`: se já existir um Data Mart com esse nome, não corra o protótipo; crie uma cópia do `04` com outro nome de base de dados e use-a (e use o mesmo nome em `DM_DB`).
 
    ```bash
    sqlcmd -S . -E -C -b -i modelo-dimensional\04_ddl_data_mart.sql
@@ -50,9 +50,9 @@ Requisitos: SQL Server com a base `MoreRhythm` anexada e o cliente `sqlcmd`. A p
 
 ## Resultado esperado
 
-- 1.ª carga: **82 linhas inseridas** (30 das 37 faturas; ficam de fora as 7 rejeitadas por R06, R07 e R11).
+- 1.ª carga: **82 linhas inseridas** (30 das 37 faturas; ficam de fora as 7 rejeitadas por R06, R07 e R11). Uma fatura só carrega se todas as suas linhas resolverem as dimensões e a taxa de câmbio (R08).
 - Testes `02`: **16 de 16 OK** (contagens, frete, totais, clientes consolidados, funcionários com email nulo).
-- Testes `03`: **9 de 9 OK** (repetir a carga não altera nada, SCD1, SCD2 com fatura de um cliente duplicado, alteração do frete no cabeçalho).
+- Testes `03`: **11 de 11 OK** (repetir a carga não altera nada, SCD1, SCD2 com fatura de um cliente duplicado, alteração do frete no cabeçalho, *hash* que distingue a posição de um `NULL` e fatura com uma linha por resolver, que não carrega nenhuma linha).
 
 ## Ficheiros
 
@@ -64,5 +64,6 @@ Requisitos: SQL Server com a base `MoreRhythm` anexada e o cliente `sqlcmd`. A p
 
 ## Limitações
 
-- A deteção de duplicados usa um bloqueio por `SOUNDEX` e funções escalares só adequadas à amostra; no SSIS usa-se o *Fuzzy Grouping*.
+- A deteção de duplicados compara todos os pares de clientes com funções escalares, adequadas só à amostra (26 clientes, 325 pares); no SSIS usa-se o componente *Fuzzy Grouping*.
 - O reapontamento de um duplicado detetado depois da carga está especificado no relatório e **não** está implementado aqui.
+- Os *hashes* usam `CONCAT` com separador explícito (um `NULL` conta como texto vazio), como no desenho; `CONCAT_WS` ignora os `NULL` e fazia colidir valores com `NULL` em colunas diferentes.
