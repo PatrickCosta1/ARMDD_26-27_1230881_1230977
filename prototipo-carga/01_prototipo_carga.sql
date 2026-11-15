@@ -1,5 +1,5 @@
 /*==============================================================================
-  PROTOTIPO da carga Staging -> Data Mart. Valida a logica da carga em T-SQL com dados reais; NAO e o ETL em SSIS
+  PROTOTIPO da carga Staging -> Data Mart (SQL Server 2017 ou superior). Valida a logica da carga em T-SQL com dados reais; NAO e o ETL em SSIS
   e so deve correr numa base descartavel.
   Objetivo: validar o desenho da carga com dados reais antes de o especificar.
   Em vez das tabelas stg_<origem> (ainda sem dados) le copias src_<origem> da
@@ -53,7 +53,7 @@ GO
   morada >= 0,80; mesmo telefone ou telemovel; mesmo email valido; mesmo BBAN; NIF validos com
   distancia de Levenshtein <= 2. Sobrevivente: atualizacao mais recente (empate: menor numero).
   O mapa e persistente: so se avaliam pares em que ambos os clientes ainda nao tem decisao.
-  Prototipo: usa um bloqueio por SOUNDEX para limitar os pares comparados; no SSIS e o Fuzzy Grouping. */
+  Prototipo: compara todos os pares com funcoes escalares (adequado a amostra); no SSIS e o Fuzzy Grouping. */
 CREATE OR ALTER FUNCTION dbo.fn_lev(@s nvarchar(200), @t nvarchar(200)) RETURNS int AS
 BEGIN
     DECLARE @sl int = LEN(@s), @tl int = LEN(@t), @i int, @j int, @c int, @a int, @b int, @d int;
@@ -109,13 +109,13 @@ BEGIN
 
     SELECT a.n n1, b.n n2, dbo.fn_sim(a.nome, b.nome) sim_nome, a.upd u1, b.upd u2,
            (CASE WHEN a.cp <> '' AND a.cp = b.cp THEN 1 ELSE 0 END)
-         + (CASE WHEN a.tel = b.tel OR a.mob = b.mob THEN 1 ELSE 0 END)
+         + (CASE WHEN a.tel IN (b.tel, b.mob) OR a.mob IN (b.tel, b.mob) THEN 1 ELSE 0 END)
          + (CASE WHEN a.email IS NOT NULL AND a.email = b.email THEN 1 ELSE 0 END)
          + (CASE WHEN a.bban IS NOT NULL AND a.bban = b.bban THEN 1 ELSE 0 END)
          + (CASE WHEN dbo.fn_sim(a.morada, b.morada) >= 0.80 THEN 1 ELSE 0 END)
          + (CASE WHEN a.nif <> 'N/D' AND b.nif <> 'N/D' AND LEN(a.nif) = 9 AND LEN(b.nif) = 9 AND dbo.fn_lev(a.nif, b.nif) <= 2 THEN 1 ELSE 0 END) AS corrob
     INTO #par FROM #c a JOIN #c b ON a.n < b.n
-    WHERE DIFFERENCE(a.nome, b.nome) >= 3;                      -- bloqueio (so no prototipo)
+    ;                                                            -- todos os pares (26 clientes: 325 pares)
 
     UPDATE m SET sobrevivente = x.novo, regra = 'NOME>=0.80+2CORROB'
     FROM dbo.map_cliente m
@@ -207,8 +207,8 @@ BEGIN
                  WHERE mg.sobrevivente = b.BK AND LTRIM(RTRIM(g.mobile)) <> ''
                  ORDER BY dbo.fn_upd(g.last_update_date, g.last_update_time) DESC) mo;
 
-    SELECT *, HASHBYTES('SHA2_256', CONCAT_WS('|', Nome, NIF, Contacto, Email, Telefone, Telemovel, Morada, Codigo_Postal, Dias_Pagamento)) AS Hash_SCD1,
-              HASHBYTES('SHA2_256', CONCAT_WS('|', Cidade, Zona, Pais, Tipo_Cliente, Segmento, seller_no)) AS Hash_SCD2
+    SELECT *, HASHBYTES('SHA2_256', CONCAT(Nome, '|', NIF, '|', Contacto, '|', Email, '|', Telefone, '|', Telemovel, '|', Morada, '|', Codigo_Postal, '|', Dias_Pagamento)) AS Hash_SCD1,
+              HASHBYTES('SHA2_256', CONCAT(Cidade, '|', Zona, '|', Pais, '|', Tipo_Cliente, '|', Segmento, '|', seller_no)) AS Hash_SCD2
     INTO #n FROM #n0;
     EXEC dbo.usp_scd 'Dim_Cliente', 'BK_Cliente', 'SK_Cliente',
         'Nome,NIF,Contacto,Email,Telefone,Telemovel,Morada,Codigo_Postal,Cidade,Zona,Pais,Tipo_Cliente,Segmento,Vendedor_Atribuido,Dias_Pagamento',
@@ -235,8 +235,8 @@ BEGIN
     JOIN dbo.src_categories c ON c.Code = p.category
     WHERE p.designation IS NOT NULL;                    -- sem designacao, familia ou categoria: rejeitado
 
-    SELECT *, HASHBYTES('SHA2_256', CONCAT_WS('|', Designacao, '')) AS Hash_SCD1,
-              HASHBYTES('SHA2_256', CONCAT_WS('|', BK_Familia, Familia, Classificacao_Familia, BK_Categoria, Categoria, Classificacao_Produto, Taxa_IVA)) AS Hash_SCD2
+    SELECT *, HASHBYTES('SHA2_256', CONCAT(Designacao, '|', '')) AS Hash_SCD1,
+              HASHBYTES('SHA2_256', CONCAT(BK_Familia, '|', Familia, '|', Classificacao_Familia, '|', BK_Categoria, '|', Categoria, '|', Classificacao_Produto, '|', Taxa_IVA)) AS Hash_SCD2
     INTO #n FROM #n0;
     EXEC dbo.usp_scd 'Dim_Produto', 'BK_Produto', 'SK_Produto',
         'Designacao,BK_Familia,Familia,Classificacao_Familia,BK_Categoria,Categoria,Classificacao_Produto,Taxa_IVA', 'Designacao';
@@ -251,7 +251,7 @@ BEGIN
         CAST(LTRIM(RTRIM(s.type)) AS nvarchar(20)) AS Tipo_Fornecedor,
         CAST(NULLIF(LTRIM(RTRIM(s.nationality)), '') AS nvarchar(20)) AS Nacionalidade,
         CAST(ISNULL(NULLIF(LTRIM(RTRIM(s.city)), ''), 'Desconhecida') AS nvarchar(43)) AS Cidade,
-        CAST(ISNULL(z.zone, 'Zona desconhecida') AS nvarchar(50)) AS Zona,
+        CAST(z.zone AS nvarchar(50)) AS Zona,
         CAST(NULLIF(LTRIM(RTRIM(s.address)), '') AS nvarchar(55)) AS Morada,
         NULLIF(LTRIM(RTRIM(s.zip_code)), '') AS Codigo_Postal,
         CAST(NULLIF(LTRIM(RTRIM(s.contact)), '') AS nvarchar(30)) AS Contacto,
@@ -260,10 +260,10 @@ BEGIN
         NULLIF(LTRIM(RTRIM(s.mobile)), '') AS Telemovel, CAST(s.days_pay_invoices AS smallint) AS Dias_Pagamento,
         CAST(s.create_date AS datetime2(0)) AS Data_Criacao_Origem, dbo.fn_upd(s.last_update_date, s.last_update_time) AS Data_Atualizacao_Origem
     INTO #n0
-    FROM dbo.src_suplliers s LEFT JOIN dbo.src_zones z ON z.code = s.zone;
+    FROM dbo.src_suplliers s JOIN dbo.src_zones z ON z.code = s.zone;      -- sem zona: rejeitado (R03)
 
-    SELECT *, HASHBYTES('SHA2_256', CONCAT_WS('|', Nome, NIF, Nacionalidade, Morada, Codigo_Postal, Contacto, Cargo_Contacto, Email, Telefone, Telemovel, Dias_Pagamento)) AS Hash_SCD1,
-              HASHBYTES('SHA2_256', CONCAT_WS('|', Tipo_Fornecedor, Cidade, Zona)) AS Hash_SCD2
+    SELECT *, HASHBYTES('SHA2_256', CONCAT(Nome, '|', NIF, '|', Nacionalidade, '|', Morada, '|', Codigo_Postal, '|', Contacto, '|', Cargo_Contacto, '|', Email, '|', Telefone, '|', Telemovel, '|', Dias_Pagamento)) AS Hash_SCD1,
+              HASHBYTES('SHA2_256', CONCAT(Tipo_Fornecedor, '|', Cidade, '|', Zona)) AS Hash_SCD2
     INTO #n FROM #n0;
     EXEC dbo.usp_scd 'Dim_Fornecedor', 'BK_Fornecedor', 'SK_Fornecedor',
         'Nome,NIF,Tipo_Fornecedor,Nacionalidade,Cidade,Zona,Morada,Codigo_Postal,Contacto,Cargo_Contacto,Email,Telefone,Telemovel,Dias_Pagamento',
@@ -284,8 +284,8 @@ BEGIN
     FROM dbo.src_employees e LEFT JOIN dbo.src_employees ch ON ch.number = e.chief;
 
     -- o nome do chefe e SCD1 (atualiza todas as versoes); o SCD2 usa so o numero do chefe
-    SELECT *, HASHBYTES('SHA2_256', CONCAT_WS('|', Codigo, Nome, Email, Nome_Chefe)) AS Hash_SCD1,
-              HASHBYTES('SHA2_256', CONCAT_WS('|', Grupo, Departamento, BK_Chefe)) AS Hash_SCD2
+    SELECT *, HASHBYTES('SHA2_256', CONCAT(Codigo, '|', Nome, '|', Email, '|', Nome_Chefe)) AS Hash_SCD1,
+              HASHBYTES('SHA2_256', CONCAT(Grupo, '|', Departamento, '|', BK_Chefe)) AS Hash_SCD2
     INTO #n FROM #n0;
     EXEC dbo.usp_scd 'Dim_Funcionario', 'BK_Funcionario', 'SK_Funcionario',
         'Codigo,Nome,Email,Grupo,Departamento,BK_Chefe,Nome_Chefe', 'Codigo,Nome,Email,Nome_Chefe';
@@ -298,7 +298,7 @@ BEGIN
     DROP TABLE IF EXISTS #linhas;
     ;WITH soma AS (
         SELECT invoice_stamp_id, SUM(line_total) s, COUNT(*) n,
-               SUM(CASE WHEN line_total <> quantity * unit_price THEN 1 ELSE 0 END) r06
+               SUM(CASE WHEN ABS(line_total - quantity * unit_price) > 0.01 THEN 1 ELSE 0 END) r06
         FROM dbo.src_invoices_lines GROUP BY invoice_stamp_id),
     fat AS (   -- so faturas validas: sem R06 (linha incoerente), R07 (cabecalho <> linhas) e R11 (total <> produtos + frete + IVA)
         SELECT i.*, so.s, so.n FROM dbo.src_invoices i JOIN soma so ON so.invoice_stamp_id = i.invoice_stamp_id
@@ -316,7 +316,7 @@ BEGIN
              ELSE frete_parcial END AS frete_alocado
     INTO #linhas FROM lin;
 
-    -- linhas validas: com todas as dimensoes resolvidas pela data da fatura
+    -- linhas validas: com todas as dimensoes resolvidas (versao corrente, como nos Lookups do tutorial da tabela de factos)
     DROP TABLE IF EXISTS #res;
     SELECT l.*, YEAR(l.invoice_date) * 10000 + MONTH(l.invoice_date) * 100 + DAY(l.invoice_date) AS sk_data,
         ISNULL(YEAR(l.payment_date) * 10000 + MONTH(l.payment_date) * 100 + DAY(l.payment_date), -1) AS sk_pag,
@@ -325,14 +325,20 @@ BEGIN
     INTO #res
     FROM #linhas l
     JOIN dbo.map_cliente mc ON mc.origem = l.customer
-    JOIN dbo.Dim_Cliente dc ON dc.BK_Cliente = mc.sobrevivente AND l.invoice_date BETWEEN dc.Data_Inicio AND dc.Data_Fim
-    JOIN dbo.Dim_Produto dp ON dp.BK_Produto = l.product AND l.invoice_date BETWEEN dp.Data_Inicio AND dp.Data_Fim
+    JOIN dbo.Dim_Cliente dc ON dc.BK_Cliente = mc.sobrevivente AND dc.Versao_Atual = 1
+    JOIN dbo.Dim_Produto dp ON dp.BK_Produto = l.product AND dp.Versao_Atual = 1
     JOIN dbo.src_products pr ON pr.reference = l.product
-    LEFT JOIN dbo.Dim_Fornecedor df ON df.BK_Fornecedor = pr.supplyer AND l.invoice_date BETWEEN df.Data_Inicio AND df.Data_Fim
-    JOIN dbo.Dim_Funcionario dfu ON dfu.BK_Funcionario = l.employee AND l.invoice_date BETWEEN dfu.Data_Inicio AND dfu.Data_Fim
+    LEFT JOIN dbo.Dim_Fornecedor df ON df.BK_Fornecedor = pr.supplyer AND df.Versao_Atual = 1
+    JOIN dbo.Dim_Funcionario dfu ON dfu.BK_Funcionario = l.employee AND dfu.Versao_Atual = 1
     JOIN dbo.Dim_Moeda dm ON dm.Codigo_ISO = CASE WHEN l.currency = 'EURO' THEN 'EUR' ELSE l.currency END
     JOIN dbo.Dim_Taxa_Cambio tc ON tc.SK_Data = YEAR(l.invoice_date) * 10000 + MONTH(l.invoice_date) * 100 + DAY(l.invoice_date) AND tc.SK_Moeda = dm.SK_Moeda
     WHERE pr.supplyer IS NULL OR df.SK_Fornecedor IS NOT NULL;
+
+    -- R08: uma fatura so carrega se TODAS as suas linhas tiverem as dimensoes e a taxa resolvidas;
+    -- caso contrario fica rejeitada por inteiro (o frete foi alocado sobre o conjunto completo das linhas)
+    DELETE r FROM #res r
+    WHERE (SELECT COUNT(*) FROM #res x WHERE x.invoice_stamp_id = r.invoice_stamp_id)
+        < (SELECT COUNT(*) FROM #linhas y WHERE y.invoice_stamp_id = r.invoice_stamp_id);
 
     -- hash da linha: linha + cabecalho (o frete do cabecalho altera a alocacao de todas as linhas)
     DROP TABLE IF EXISTS #f;
@@ -341,9 +347,7 @@ BEGIN
         dbo.fn_upd(create_date, create_time) AS cd,
         CASE WHEN dbo.fn_upd(last_update_date, last_update_time) > dbo.fn_upd(f_upd_d, f_upd_t)
              THEN dbo.fn_upd(last_update_date, last_update_time) ELSE dbo.fn_upd(f_upd_d, f_upd_t) END AS ud,
-        HASHBYTES('SHA2_256', CONCAT_WS('|', invoice_line_stamp_id, product, quantity, unit_price, line_total, line_vat,
-                                         invoice_date, customer, employee, payment_date, currency, shipping_cost, last_update_date, last_update_time,
-                                         f_upd_d, f_upd_t)) AS hl
+        HASHBYTES('SHA2_256', CONCAT(invoice_line_stamp_id, '|', product, '|', quantity, '|', unit_price, '|', line_total, '|', line_vat, '|', invoice_date, '|', customer, '|', employee, '|', payment_date, '|', currency, '|', shipping_cost, '|', last_update_date, '|', last_update_time, '|', f_upd_d, '|', f_upd_t)) AS hl
     INTO #f FROM #res;
 
     -- upsert por BK_Linha_Fatura: so insere novas linhas ou as que mudaram (hash)

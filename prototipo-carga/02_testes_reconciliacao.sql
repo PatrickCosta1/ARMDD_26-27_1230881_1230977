@@ -61,8 +61,8 @@ INSERT @T SELECT 'B5 cliente consolidado 5/26: email valido (o do 26) e telemove
        IIF(Email = 'coro@sapo.pt' AND Telemovel IS NOT NULL, 1, 0), CONCAT(Email, ' / ', Telemovel) FROM dbo.Dim_Cliente WHERE BK_Cliente IN (5, 26) AND Versao_Atual = 1;
 INSERT @T SELECT 'B6 clientes sem zona (2 e 20) nao entram na dimensao',
        IIF(COUNT(*) = 0, 1, 0), NULL FROM dbo.Dim_Cliente WHERE BK_Cliente IN (2, 20);
-INSERT @T SELECT 'B7 dimensoes: 65 produtos validos (67 menos 2), 14 fornecedores, 6 funcionarios (sem contar o membro -1)',
-       IIF((SELECT COUNT(*) FROM dbo.Dim_Produto WHERE SK_Produto > 0) = 65 AND (SELECT COUNT(*) FROM dbo.Dim_Fornecedor WHERE SK_Fornecedor > 0) = 14
+INSERT @T SELECT 'B7 dimensoes: 65 produtos validos (67 menos 2), 12 fornecedores (14 menos 2 sem zona), 6 funcionarios (sem contar o membro -1)',
+       IIF((SELECT COUNT(*) FROM dbo.Dim_Produto WHERE SK_Produto > 0) = 65 AND (SELECT COUNT(*) FROM dbo.Dim_Fornecedor WHERE SK_Fornecedor > 0) = 12
         AND (SELECT COUNT(*) FROM dbo.Dim_Funcionario WHERE SK_Funcionario > 0) = 6, 1, 0),
        CONCAT((SELECT COUNT(*) FROM dbo.Dim_Produto WHERE SK_Produto > 0), '/', (SELECT COUNT(*) FROM dbo.Dim_Fornecedor WHERE SK_Fornecedor > 0), '/', (SELECT COUNT(*) FROM dbo.Dim_Funcionario WHERE SK_Funcionario > 0));
 INSERT @T SELECT 'B8 vendedor atribuido: seller=0 fica NULL (clientes 24 e 25; 2 e 20 nao entram)', IIF(SUM(CASE WHEN Vendedor_Atribuido IS NULL THEN 1 ELSE 0 END) = 2, 1, 0), CONCAT('sem vendedor=', SUM(CASE WHEN Vendedor_Atribuido IS NULL THEN 1 ELSE 0 END))

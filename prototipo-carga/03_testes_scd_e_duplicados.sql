@@ -112,5 +112,30 @@ INSERT dbo.t_res (Teste, Ok, Detalhe)
 SELECT 'C6 nenhuma linha do facto aponta para o membro -1 de cliente, produto ou funcionario',
        IIF(COUNT(*) = 0, 1, 0), NULL FROM dbo.Fact_Vendas WHERE SK_Cliente = -1 OR SK_Produto = -1 OR SK_Funcionario = -1;
 
+/*------ C7. o hash distingue a posicao de um NULL (CONCAT com separadores explicitos) ------*/
+INSERT dbo.t_res (Teste, Ok, Detalhe)
+SELECT 'C7 hash: (a, NULL, b) e (a, b, NULL) dao valores diferentes',
+       IIF(HASHBYTES('SHA2_256', CONCAT('a', '|', NULL, '|', 'b')) <> HASHBYTES('SHA2_256', CONCAT('a', '|', 'b', '|', NULL)), 1, 0), NULL;
+GO
+
+/*------ C8. R08: uma fatura com uma linha por resolver nao carrega nenhuma linha ------*/
+DECLARE @fat8 char(25) = (SELECT TOP 1 invoice_stamp_id FROM dbo.src_invoices_lines WHERE invoice_stamp_id IN (SELECT Numero_Fatura FROM dbo.Fact_Vendas)
+                          GROUP BY invoice_stamp_id HAVING COUNT(*) >= 2 ORDER BY invoice_stamp_id);
+SELECT * INTO #i8 FROM dbo.src_invoices WHERE invoice_stamp_id = @fat8;
+SELECT * INTO #l8 FROM dbo.src_invoices_lines WHERE invoice_stamp_id = @fat8;
+UPDATE #i8 SET invoice_stamp_id = 'TESTE-FATURA-0000000008', invoice_date = '2026-03-02', last_update_date = '2026-03-02';
+UPDATE #l8 SET invoice_stamp_id = 'TESTE-FATURA-0000000008', invoice_line_stamp_id = CONCAT('TESTE8-', RIGHT(invoice_line_stamp_id, 15)),
+               last_update_date = '2026-03-02';
+UPDATE TOP (1) #l8 SET product = 'Z001';     -- produto rejeitado (R04): sem versao na dimensao
+INSERT dbo.src_invoices SELECT * FROM #i8;
+INSERT dbo.src_invoices_lines SELECT * FROM #l8;
+DECLARE @r8 TABLE (ins int, upd int);
+INSERT @r8 EXEC dbo.usp_load_fact @lote = 6;
+INSERT dbo.t_res (Teste, Ok, Detalhe)
+SELECT 'C8 R08: fatura com uma linha por resolver nao carrega nenhuma das suas linhas',
+       IIF(COUNT(*) = 0, 1, 0), CONCAT('linhas carregadas=', COUNT(*), ' (esperado 0)')
+FROM dbo.Fact_Vendas WHERE Numero_Fatura = 'TESTE-FATURA-0000000008';
+GO
+
 SELECT Id, IIF(Ok = 1, 'OK', 'FALHOU') AS Resultado, Teste, Detalhe FROM dbo.t_res ORDER BY Id;
 GO
